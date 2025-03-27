@@ -4,11 +4,16 @@ from rest_framework.decorators import action
 from django.utils.timezone import now
 from django.db.models import Q
 from django.contrib.auth import get_user_model
-from .models import Service, Lead
-from .serializers import ServiceSerializer,  LeadSerializer
+from .models import Client, Service, Lead
+from .serializers import ClientSerializer, ServiceSerializer,  LeadSerializer
 from users.serializers import UserGet
 
 User = get_user_model()
+
+class ClientViewSet(viewsets.ModelViewSet):
+    queryset = Client.objects.all()
+    serializer_class = ClientSerializer
+
 
 class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Service.objects.all()

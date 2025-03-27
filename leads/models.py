@@ -1,8 +1,21 @@
+import re
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.conf import settings
 
 User = settings.AUTH_USER_MODEL
+
+class Client(models.Model):
+    phone = models.CharField(max_length=20, unique=True, verbose_name="Номер телефона")
+    name = models.CharField(max_length=255, verbose_name="Имя клиента")
+
+    class Meta:
+        verbose_name = "Клиент"
+        verbose_name_plural = "Клиенты"
+
+    def __str__(self):
+        return f"{self.name} ({self.phone})"
+
 
 class Service(models.Model):
     name = models.CharField(max_length=255, unique=True, verbose_name="Название услуги")
@@ -16,9 +29,11 @@ class Service(models.Model):
     def __str__(self):
         return self.name
 
+
 class Lead(models.Model):
-    client_name = models.CharField(max_length=255)
-    phone = models.CharField(max_length=20)
+    client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
+    client_name = models.CharField(max_length=255, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
     service = models.ForeignKey(Service, on_delete=models.CASCADE)
     master = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leads")
     date_time = models.DateTimeField()
@@ -30,6 +45,13 @@ class Lead(models.Model):
         verbose_name_plural = "Лиды"
 
     def clean(self):
+        if self.phone:
+            if not re.match(r'^\d{9}$', self.phone):
+                raise ValidationError("Номер телефона должен состоять из 9 цифр (например, 550990123).")
+
+        if not self.client and not self.phone:
+            raise ValidationError("Должен быть указан либо клиент, либо номер телефона.")
+
         if Lead.objects.filter(
             date_time=self.date_time,
             service=self.service,
@@ -42,7 +64,15 @@ class Lead(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean()
+
+        if not self.client:
+            client, created = Client.objects.get_or_create(
+                phone=self.phone,
+                defaults={'name': self.client_name or "Неизвестный"}
+            )
+            self.client = client
+
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.client_name} - {self.service} - {self.date_time}"
+        return f"{self.client.name if self.client else self.client_name} - {self.service} - {self.date_time}"
