@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.utils.timezone import now
@@ -11,6 +12,7 @@ from .serializers import ClientSerializer, ServiceSerializer,  LeadSerializer
 from users.serializers import UserGet
 
 User = get_user_model()
+
 
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.all()
@@ -50,8 +52,11 @@ class LeadConfirmationViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'])
     def pending(self, request):
         pending_leads = Lead.objects.filter(is_confirmed=False).order_by('-created_at')
-        serializer = LeadSerializer(pending_leads, many=True)
-        return Response(serializer.data)
+
+        paginator = PageNumberPagination()
+        paginated_leads = paginator.paginate_queryset(pending_leads, request)
+        data = LeadSerializer(paginated_leads, many=True).data
+        return Response(data)
 
     @swagger_auto_schema(
         request_body=openapi.Schema(
