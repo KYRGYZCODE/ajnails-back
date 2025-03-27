@@ -56,7 +56,7 @@ class LeadConfirmationViewSet(viewsets.ViewSet):
         paginator = PageNumberPagination()
         paginated_leads = paginator.paginate_queryset(pending_leads, request)
         data = LeadSerializer(paginated_leads, many=True).data
-        return Response(data)
+        return paginator.get_paginated_response(data)
 
     @swagger_auto_schema(
         request_body=openapi.Schema(
