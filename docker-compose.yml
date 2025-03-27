@@ -18,7 +18,7 @@ services:
       - ./static:/app/static
       - ./media:/app/media
     ports:
-      - "8089:8000"
+      - "8090:8000"
     command: gunicorn --bind 0.0.0.0:8000 core.wsgi:application
 
 volumes:
