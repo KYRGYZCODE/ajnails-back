@@ -1,25 +1,23 @@
 from rest_framework import serializers
-from .models import Service, Lead, Appointment, User
+from .models import Service, Lead
+from users.serializers import UserGet
 
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
         fields = '__all__'
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['uuid', 'first_name', 'last_name', 'services']
 
 class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         fields = '__all__'
-
-class AppointmentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Appointment
-        fields = '__all__'
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['service'] = ServiceSerializer(instance.service).data
+        representation['master'] = UserGet(instance.master).data
+        return representation
 
 class BusySlotSerializer(serializers.Serializer):
     date_time = serializers.DateTimeField()

@@ -20,46 +20,29 @@ class Lead(models.Model):
     client_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=20)
     service = models.ForeignKey(Service, on_delete=models.CASCADE)
-    master = models.ForeignKey(User, on_delete=models.CASCADE)
+    master = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leads")
     date_time = models.DateTimeField()
     prepayment = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-
-
-class Appointment(models.Model):
-    client_name = models.CharField(max_length=255, verbose_name="Имя клиента")
-    client_phone = models.CharField(max_length=50, verbose_name="Номер телефона клиента")
-    
-    master = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        verbose_name="Мастер",
-        limit_choices_to={"is_employee": True},
-    )
-    service = models.ForeignKey(
-        "Service",
-        on_delete=models.CASCADE,
-        related_name="appointments",
-        verbose_name="Услуга"
-    )
-    date_time = models.DateTimeField(verbose_name="Дата и время")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата и время создания")
+    is_confirmed = models.BooleanField(default=False)
 
     class Meta:
-        unique_together = ("master", "date_time")
-        verbose_name = 'Запись'
-        verbose_name_plural = 'Записи'
+        verbose_name = "Лид"
+        verbose_name_plural = "Лиды"
 
     def clean(self):
-        if self.service not in self.master.services.all():
-            raise ValidationError(f"Мастер {self.master} не предоставляет услугу '{self.service}'.")
+        if Lead.objects.filter(
+            date_time=self.date_time,
+            service=self.service,
+            master=self.master
+        ).exists():
+            raise ValidationError("У этого мастера уже есть запись на указанное время для данной услуги.")
 
-        if Appointment.objects.exclude(id=self.id).filter(master=self.master, date_time=self.date_time).exists():
-            raise ValidationError("Этот мастер уже занят на выбранное время.")
+        if not self.master.services.filter(id=self.service.id).exists():
+            raise ValidationError("Этот мастер не оказывает данную услугу.")
 
     def save(self, *args, **kwargs):
         self.clean()
         super().save(*args, **kwargs)
 
-    
     def __str__(self):
-        return f"{self.date_time} - {self.client_name}, мастер: {self.master.first_name}"
+        return f"{self.client_name} - {self.service} - {self.date_time}"
