@@ -16,8 +16,6 @@ class ClientSerializer(serializers.ModelSerializer):
 
 
 class LeadSerializer(serializers.ModelSerializer):
-    client = ClientSerializer(required=False, allow_null=True)
-    
     class Meta:
         model = Lead
         fields = '__all__'

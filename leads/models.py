@@ -47,22 +47,23 @@ class Lead(models.Model):
         verbose_name_plural = "Лиды"
 
     def clean(self):
-        if self.phone:
-            if not re.match(r'^\d{9}$', self.phone):
-                raise ValidationError("Номер телефона должен состоять из 9 цифр (например, 550990123).")
+        if not self.pk:
+            if self.phone:
+                if not re.match(r'^\d{9}$', self.phone):
+                    raise ValidationError("Номер телефона должен состоять из 9 цифр (например, 550990123).")
 
-        if not self.client and not self.phone:
-            raise ValidationError("Должен быть указан либо клиент, либо номер телефона.")
+            if not self.client and not self.phone:
+                raise ValidationError("Должен быть указан либо клиент, либо номер телефона.")
 
-        if Lead.objects.filter(
-            date_time=self.date_time,
-            service=self.service,
-            master=self.master
-        ).exists():
-            raise ValidationError("У этого мастера уже есть запись на указанное время для данной услуги.")
+            if Lead.objects.filter(
+                date_time=self.date_time,
+                service=self.service,
+                master=self.master
+            ).exists():
+                raise ValidationError("У этого мастера уже есть запись на указанное время для данной услуги.")
 
-        if not self.master.services.filter(id=self.service.id).exists():
-            raise ValidationError("Этот мастер не оказывает данную услугу.")
+            if not self.master.services.filter(id=self.service.id).exists():
+                raise ValidationError("Этот мастер не оказывает данную услугу.")
 
     def save(self, *args, **kwargs):
         self.clean()
