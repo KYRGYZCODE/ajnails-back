@@ -53,64 +53,148 @@ class LeadViewSet(viewsets.ModelViewSet):
         busy_leads = Lead.objects.values("date_time", "master_id")
         
         return Response(busy_leads)
-        
-    @swagger_auto_schema(
-        manual_parameters=[
-            openapi.Parameter(
-                'date', openapi.IN_QUERY, description="Дата в формате YYYY-MM-DD",
-                type=openapi.TYPE_STRING, required=True
-            )
-        ],
-        responses={200: LeadSerializer(many=True)}
-    )
-    @action(detail=False, methods=['get'])
-    def by_week(self, request):
-        date_str = request.query_params.get('date')
-        if not date_str:
-            return Response({"error": "Дата не передана"}, status=status.HTTP_400_BAD_REQUEST)
 
-        selected_date = parse_date(date_str)
-        if not selected_date:
-            return Response({"error": "Некорректный формат даты"}, status=status.HTTP_400_BAD_REQUEST)
-
-        start_of_week = selected_date - timedelta(days=selected_date.weekday())  # Понедельник
-        end_of_week = start_of_week + timedelta(days=6)  # Воскресенье
-
-        start_of_week = make_aware(datetime.combine(start_of_week, datetime.min.time()))
-        end_of_week = make_aware(datetime.combine(end_of_week, datetime.max.time()))
-
-        leads = Lead.objects.filter(date_time__range=[start_of_week, end_of_week])
-        serializer = LeadSerializer(leads, many=True)
-
-        return Response(serializer.data)
 
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
-                'date', openapi.IN_QUERY, description="Дата в формате YYYY-MM-DD",
-                type=openapi.TYPE_STRING, required=True
+                'date', 
+                openapi.IN_QUERY, 
+                description="Дата для получения недельного расписания (формат YYYY-MM-DD)",
+                type=openapi.TYPE_STRING
             )
         ],
-        responses={200: LeadSerializer(many=True)}
+        responses={
+            200: openapi.Response(
+                description="Список лидов за неделю",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'days': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'date': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'day': openapi.Schema(type=openapi.TYPE_STRING),
+                                    'leads': openapi.Schema(
+                                        type=openapi.TYPE_ARRAY, 
+                                        items=openapi.Items(type=openapi.TYPE_OBJECT)
+                                    )
+                                }
+                            )
+                        )
+                    }
+                )
+            ),
+            400: "Ошибка в формате даты"
+        }
     )
-    @action(detail=False, methods=['get'])
-    def by_date(self, request):
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
+    def weekly_leads(self, request):
         date_str = request.query_params.get('date')
-        if not date_str:
-            return Response({"error": "Дата не передана"}, status=status.HTTP_400_BAD_REQUEST)
-
-        selected_date = parse_date(date_str)
-        if not selected_date:
-            return Response({"error": "Некорректный формат даты"}, status=status.HTTP_400_BAD_REQUEST)
-
-        start_of_day = make_aware(datetime.combine(selected_date, datetime.min.time()))
-        end_of_day = make_aware(datetime.combine(selected_date, datetime.max.time()))
-
-        leads = Lead.objects.filter(date_time__range=[start_of_day, end_of_day])
-        serializer = LeadSerializer(leads, many=True)
-
-        return Response(serializer.data)
         
+        try:
+            input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            monday = input_date - timedelta(days=input_date.weekday())
+            
+            days_ru = {
+                0: 'Понедельник', 
+                1: 'Вторник', 
+                2: 'Среда', 
+                3: 'Четверг', 
+                4: 'Пятница', 
+                5: 'Суббота', 
+                6: 'Воскресенье'
+            }
+            
+            weekly_leads_data = []
+            for i in range(7):
+                current_day = monday + timedelta(days=i)
+                day_leads = Lead.objects.filter(
+                    date_time__date=current_day
+                )
+                
+                serialized_leads = LeadSerializer(day_leads, many=True).data
+                
+                day_data = {
+                    'date': current_day.strftime('%Y-%m-%d'),
+                    'day': days_ru[i],
+                    'leads': serialized_leads
+                }
+                
+                weekly_leads_data.append(day_data)
+            
+            return Response({'days': weekly_leads_data})
+        
+        except ValueError:
+            return Response(
+                {"error": "Неверный формат даты. Используйте YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'date', 
+                openapi.IN_QUERY, 
+                description="Дата для получения лидов (формат YYYY-MM-DD)",
+                type=openapi.TYPE_STRING
+            )
+        ],
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'date': openapi.Schema(type=openapi.TYPE_STRING),
+                    'day': openapi.Schema(type=openapi.TYPE_STRING),
+                    'leads': openapi.Schema(
+                        type=openapi.TYPE_ARRAY, 
+                        items=openapi.Items(type=openapi.TYPE_OBJECT)
+                    )
+                }
+            ),
+            400: "Ошибка в формате даты"
+        }
+    )
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
+    def daily_leads(self, request):
+        date_str = request.query_params.get('date')
+        
+        try:
+            input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            days_ru = {
+                0: 'Понедельник', 
+                1: 'Вторник', 
+                2: 'Среда', 
+                3: 'Четверг', 
+                4: 'Пятница', 
+                5: 'Суббота', 
+                6: 'Воскресенье'
+            }
+            
+            daily_leads = Lead.objects.filter(
+                date_time__date=input_date
+            )
+            
+            serialized_leads = LeadSerializer(daily_leads, many=True).data
+            
+            day_data = {
+                'date': input_date.strftime('%Y-%m-%d'),
+                'day': days_ru[input_date.weekday()],
+                'leads': serialized_leads
+            }
+            
+            return Response(day_data)
+        
+        except ValueError:
+            return Response(
+                {"error": "Неверный формат даты. Используйте YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
 
 class LeadConfirmationViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
