@@ -74,7 +74,10 @@ class LeadViewSet(viewsets.ModelViewSet):
         start_of_week = selected_date - timedelta(days=selected_date.weekday())  # Понедельник
         end_of_week = start_of_week + timedelta(days=6)  # Воскресенье
 
-        leads = Lead.objects.filter(date_time__date__range=[start_of_week, end_of_week])
+        start_of_week = make_aware(datetime.combine(start_of_week, datetime.min.time()))
+        end_of_week = make_aware(datetime.combine(end_of_week, datetime.max.time()))
+
+        leads = Lead.objects.filter(date_time__range=[start_of_week, end_of_week])
         serializer = LeadSerializer(leads, many=True)
 
         return Response(serializer.data)
@@ -98,10 +101,14 @@ class LeadViewSet(viewsets.ModelViewSet):
         if not selected_date:
             return Response({"error": "Некорректный формат даты"}, status=status.HTTP_400_BAD_REQUEST)
 
-        leads = Lead.objects.filter(date_time__date=selected_date)
-        serializer = LeadSerializer(leads, many=True)
-        return Response(serializer.data)
+        start_of_day = make_aware(datetime.combine(selected_date, datetime.min.time()))
+        end_of_day = make_aware(datetime.combine(selected_date, datetime.max.time()))
 
+        leads = Lead.objects.filter(date_time__range=[start_of_day, end_of_day])
+        serializer = LeadSerializer(leads, many=True)
+
+        return Response(serializer.data)
+        
 
 class LeadConfirmationViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
