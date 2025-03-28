@@ -31,10 +31,14 @@ class LeadViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.AllowAny]
 
     def create(self, request, *args, **kwargs):
-        data = request.data
-        serializer = self.get_serializer(data=data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
+        serializer = self.get_serializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+        except DjangoValidationError as e:
+            raise DRFValidationError(e.messages)
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
