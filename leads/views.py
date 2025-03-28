@@ -49,6 +49,38 @@ class LeadViewSet(viewsets.ModelViewSet):
         busy_leads = Lead.objects.values("date_time", "master_id")
         
         return Response(busy_leads)
+        
+    @action(detail=False, methods=['get'])
+    def by_week(self, request):
+        date_str = request.query_params.get('date')
+        if not date_str:
+            return Response({"error": "Дата не передана"}, status=status.HTTP_400_BAD_REQUEST)
+
+        selected_date = parse_date(date_str)
+        if not selected_date:
+            return Response({"error": "Некорректный формат даты"}, status=status.HTTP_400_BAD_REQUEST)
+
+        start_of_week = selected_date - timedelta(days=selected_date.weekday())  # Понедельник
+        end_of_week = start_of_week + timedelta(days=6)  # Воскресенье
+
+        leads = Lead.objects.filter(date_time__date__range=[start_of_week, end_of_week])
+        serializer = LeadSerializer(leads, many=True)
+
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def by_date(self, request):
+        date_str = request.query_params.get('date')
+        if not date_str:
+            return Response({"error": "Дата не передана"}, status=status.HTTP_400_BAD_REQUEST)
+
+        selected_date = parse_date(date_str)
+        if not selected_date:
+            return Response({"error": "Некорректный формат даты"}, status=status.HTTP_400_BAD_REQUEST)
+
+        leads = Lead.objects.filter(date_time__date=selected_date)
+        serializer = LeadSerializer(leads, many=True)
+        return Response(serializer.data)
 
 
 class LeadConfirmationViewSet(viewsets.ViewSet):
