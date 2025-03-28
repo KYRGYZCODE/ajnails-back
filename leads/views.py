@@ -50,6 +50,15 @@ class LeadViewSet(viewsets.ModelViewSet):
         
         return Response(busy_leads)
         
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'date', openapi.IN_QUERY, description="Дата в формате YYYY-MM-DD",
+                type=openapi.TYPE_STRING, required=True
+            )
+        ],
+        responses={200: LeadSerializer(many=True)}
+    )
     @action(detail=False, methods=['get'])
     def by_week(self, request):
         date_str = request.query_params.get('date')
@@ -68,6 +77,15 @@ class LeadViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.data)
 
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'date', openapi.IN_QUERY, description="Дата в формате YYYY-MM-DD",
+                type=openapi.TYPE_STRING, required=True
+            )
+        ],
+        responses={200: LeadSerializer(many=True)}
+    )
     @action(detail=False, methods=['get'])
     def by_date(self, request):
         date_str = request.query_params.get('date')
