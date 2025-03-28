@@ -8,6 +8,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.utils.timezone import now
 from django.db.models import Q
+from django.utils.dateparse import parse_date
 from django.contrib.auth import get_user_model
 from .models import Client, Service, Lead
 from .serializers import ClientSerializer, ServiceSerializer,  LeadSerializer
