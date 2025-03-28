@@ -15,6 +15,8 @@ from .models import Client, Service, Lead
 from .serializers import ClientSerializer, ServiceSerializer,  LeadSerializer
 from users.serializers import UserGet
 
+from django.utils.timezone import make_aware, datetime
+
 User = get_user_model()
 
 
