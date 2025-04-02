@@ -56,43 +56,59 @@ class LeadViewSet(viewsets.ModelViewSet):
 
 
     @swagger_auto_schema(
-        manual_parameters=[
-            openapi.Parameter(
-                'date', 
-                openapi.IN_QUERY, 
-                description="Дата для получения недельного расписания (формат YYYY-MM-DD)",
-                type=openapi.TYPE_STRING
-            )
-        ],
-        responses={
-            200: openapi.Response(
-                description="Список лидов за неделю",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'days': openapi.Schema(
-                            type=openapi.TYPE_ARRAY,
-                            items=openapi.Schema(
-                                type=openapi.TYPE_OBJECT,
-                                properties={
-                                    'date': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'day': openapi.Schema(type=openapi.TYPE_STRING),
-                                    'leads': openapi.Schema(
-                                        type=openapi.TYPE_ARRAY, 
-                                        items=openapi.Items(type=openapi.TYPE_OBJECT)
-                                    )
-                                }
-                            )
+    manual_parameters=[
+        openapi.Parameter(
+            'date', 
+            openapi.IN_QUERY, 
+            description="Дата для получения недельного расписания (формат YYYY-MM-DD)",
+            type=openapi.TYPE_STRING
+        ),
+        openapi.Parameter(
+            'master_id', 
+            openapi.IN_QUERY, 
+            description="ID мастера для фильтрации",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        ),
+        openapi.Parameter(
+            'service_id', 
+            openapi.IN_QUERY, 
+            description="ID услуги для фильтрации",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        )
+    ],
+    responses={
+        200: openapi.Response(
+            description="Список лидов за неделю",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'days': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'date': openapi.Schema(type=openapi.TYPE_STRING),
+                                'day': openapi.Schema(type=openapi.TYPE_STRING),
+                                'leads': openapi.Schema(
+                                    type=openapi.TYPE_ARRAY, 
+                                    items=openapi.Items(type=openapi.TYPE_OBJECT)
+                                )
+                            }
                         )
-                    }
-                )
-            ),
-            400: "Ошибка в формате даты"
+                    )
+                }
+            )
+        ),
+        400: "Ошибка в формате даты"
         }
     )
     @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def weekly_leads(self, request):
         date_str = request.query_params.get('date')
+        master_id = request.query_params.get('master_id')
+        service_id = request.query_params.get('service_id')
         
         try:
             input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -112,11 +128,16 @@ class LeadViewSet(viewsets.ModelViewSet):
             weekly_leads_data = []
             for i in range(7):
                 current_day = monday + timedelta(days=i)
-                day_leads = Lead.objects.filter(
-                    date_time__date=current_day
-                )
                 
-                serialized_leads = LeadSerializer(day_leads, many=True).data
+                day_leads_query = Lead.objects.filter(date_time__date=current_day)
+                
+                if master_id:
+                    day_leads_query = day_leads_query.filter(master_id=master_id)
+                    
+                if service_id:
+                    day_leads_query = day_leads_query.filter(service_id=service_id)
+                
+                serialized_leads = LeadSerializer(day_leads_query, many=True).data
                 
                 day_data = {
                     'date': current_day.strftime('%Y-%m-%d'),
@@ -141,6 +162,20 @@ class LeadViewSet(viewsets.ModelViewSet):
                 openapi.IN_QUERY, 
                 description="Дата для получения лидов (формат YYYY-MM-DD)",
                 type=openapi.TYPE_STRING
+            ),
+            openapi.Parameter(
+                'master_id', 
+                openapi.IN_QUERY, 
+                description="ID мастера для фильтрации",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            ),
+            openapi.Parameter(
+                'service_id', 
+                openapi.IN_QUERY, 
+                description="ID услуги для фильтрации",
+                type=openapi.TYPE_INTEGER,
+                required=False
             )
         ],
         responses={
@@ -161,6 +196,8 @@ class LeadViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def daily_leads(self, request):
         date_str = request.query_params.get('date')
+        master_id = request.query_params.get('master_id')
+        service_id = request.query_params.get('service_id')
         
         try:
             input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -175,11 +212,15 @@ class LeadViewSet(viewsets.ModelViewSet):
                 6: 'Воскресенье'
             }
             
-            daily_leads = Lead.objects.filter(
-                date_time__date=input_date
-            )
+            daily_leads_query = Lead.objects.filter(date_time__date=input_date)
             
-            serialized_leads = LeadSerializer(daily_leads, many=True).data
+            if master_id:
+                daily_leads_query = daily_leads_query.filter(master_id=master_id)
+                
+            if service_id:
+                daily_leads_query = daily_leads_query.filter(service_id=service_id)
+            
+            serialized_leads = LeadSerializer(daily_leads_query, many=True).data
             
             day_data = {
                 'date': input_date.strftime('%Y-%m-%d'),
