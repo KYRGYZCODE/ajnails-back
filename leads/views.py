@@ -67,7 +67,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             'master_id', 
             openapi.IN_QUERY, 
             description="ID мастера для фильтрации",
-            type=openapi.TYPE_INTEGER,
+            type=openapi.TYPE_STRING,
             required=False
         ),
         openapi.Parameter(
@@ -167,7 +167,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                 'master_id', 
                 openapi.IN_QUERY, 
                 description="ID мастера для фильтрации",
-                type=openapi.TYPE_INTEGER,
+                type=openapi.TYPE_STRING,
                 required=False
             ),
             openapi.Parameter(
