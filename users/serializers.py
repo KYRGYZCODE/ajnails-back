@@ -5,9 +5,16 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
 
 class UserSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
     class Meta:
         model = User
-        exclude = ('password', 'groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser',)
+        exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser',)
+    
+    def create(self, validated_data):
+        user = User.objects.create_user(**validated_data)
+        return user
 
 class UserGet(serializers.ModelSerializer):
     class Meta:
