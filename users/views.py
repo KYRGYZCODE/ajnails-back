@@ -18,7 +18,7 @@ from drf_yasg import openapi
 
 from leads.models import Lead, Service
 from .models import User
-from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSerializer, UserRegistration, UserSerializer, FireUser
+from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSerializer, UserChangePassword, UserRegistration, UserSerializer, FireUser
 
 
 class EmployeeListView(ListAPIView):
@@ -108,9 +108,12 @@ class UserViewSet(ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'fire':
             return FireUser
-        if self.action == 'register_user':
+        elif self.action == 'register_user':
             return UserRegistration
+        elif self.action == 'change_password':
+            return UserChangePassword
         return super().get_serializer_class()
+    
     
     @action(methods=['post'], detail=True)
     def fire(self, request, pk=None):
@@ -134,6 +137,13 @@ class UserViewSet(ModelViewSet):
             user = serializer.save()
             return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def change_password(self, request, pk=None):
+        user = get_object_or_404(User, pk=pk)
+        user.set_password(request.data.get('new_password'))
+        user.save()
+        return Response({'message': 'Password changed'}, status=status.HTTP_200_OK)
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]

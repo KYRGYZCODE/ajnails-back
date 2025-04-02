@@ -12,7 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
 class UserGet(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('uuid', 'avatar', 'first_name', 'last_name', 'surname', 'email')
+        fields = ('uuid', 'avatar', 'first_name', 'last_name', 'surname', 'email', 'about')
 
 
 class FireUser(serializers.ModelSerializer):
@@ -20,6 +20,8 @@ class FireUser(serializers.ModelSerializer):
         model = User
         fields = ('termination_reason', 'termination_order_date', 'termination_date')
 
+class UserChangePassword(serializers.Serializer):
+    new_password = serializers.CharField()
 
 class UserRegistration(serializers.Serializer):
     email = serializers.EmailField()

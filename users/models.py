@@ -56,6 +56,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_name = models.CharField(max_length=120, verbose_name="Фамилия", default='Фамилия')
     surname = models.CharField(max_length=120, null=True, blank=True, verbose_name="Отчество")
     gender = models.CharField(max_length=6, choices=GENDER_CHOICES, null=True, blank=True, verbose_name="Пол")
+    about = models.CharField(max_length=300, null=True, blank=True)
+
     citizenship = models.CharField(max_length=100, null=True, blank=True, verbose_name="Гражданство")
     role = models.CharField(max_length=8, choices=ROLE_CHOICES, default='worker', verbose_name="Роль")
     is_active = models.BooleanField(default=True)
