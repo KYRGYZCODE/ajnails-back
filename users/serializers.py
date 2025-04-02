@@ -13,7 +13,13 @@ class UserSerializer(serializers.ModelSerializer):
         exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser',)
     
     def create(self, validated_data):
+        services_data = validated_data.pop('services', None)
+
         user = User.objects.create_user(**validated_data)
+
+        if services_data:
+            user.services.set(services_data)
+
         return user
 
 class UserGet(serializers.ModelSerializer):
