@@ -46,6 +46,7 @@ class Lead(models.Model):
     class Meta:
         verbose_name = "Лид"
         verbose_name_plural = "Лиды"
+        ordering = ['-created_at']
 
     def clean(self):
         if not self.pk:
