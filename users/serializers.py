@@ -3,7 +3,6 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import User
-from leads.serializers import ServiceSerializer
 
 class UserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()
@@ -24,6 +23,7 @@ class UserSerializer(serializers.ModelSerializer):
         return user
     
     def to_representation(self, instance):
+        from leads.serializers import ServiceSerializer
         representation = super().to_representation(instance)
         representation["services"] = ServiceSerializer(instance.services, many=True).data
         return representation
