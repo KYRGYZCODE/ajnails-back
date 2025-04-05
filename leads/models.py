@@ -49,23 +49,28 @@ class Lead(models.Model):
         ordering = ['-created_at']
 
     def clean(self):
+        import re
+        from django.core.exceptions import ValidationError
+    
         if not self.pk:
-            if self.phone:
-                if not re.match(r'^\d{9}$', self.phone):
-                    raise ValidationError("Номер телефона должен состоять из 9 цифр (например, 550990123).")
-
+            if self.phone and not re.match(r'^\d{9}$', self.phone):
+                raise ValidationError("Номер телефона должен состоять из 9 цифр (например, 550990123).")
+    
             if not self.client and not self.phone:
                 raise ValidationError("Должен быть указан либо клиент, либо номер телефона.")
+    
+        if self.date_time and self.master and self.service.exists():
+            for s in self.service.all():
+                if Lead.objects.filter(
+                    date_time=self.date_time,
+                    master=self.master,
+                    service=s
+                ).exclude(pk=self.pk).exists():
+                    raise ValidationError(f"У этого мастера уже есть запись на {self.date_time} для услуги {s.name}.")
+    
+                if not self.master.services.filter(id=s.id).exists():
+                    raise ValidationError(f"Мастер {self.master} не оказывает услугу {s.name}.")
 
-            if Lead.objects.filter(
-                date_time=self.date_time,
-                service=self.service,
-                master=self.master
-            ).exists():
-                raise ValidationError("У этого мастера уже есть запись на указанное время для данной услуги.")
-
-            if not self.master.services.filter(id=self.service.id).exists():
-                raise ValidationError("Этот мастер не оказывает данную услугу.")
 
     def save(self, *args, **kwargs):
         self.clean()
