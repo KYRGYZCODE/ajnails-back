@@ -23,7 +23,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        representation['service'] = ServiceSerializer(instance.service).data
+        representation['service'] = ServiceSerializer(instance.service.all(), many=True).data
         representation['master'] = UserGet(instance.master).data
         representation['client'] = ClientSerializer(instance.client).data if instance.client else None
         return representation
