@@ -35,7 +35,7 @@ class Lead(models.Model):
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     client_name = models.CharField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
-    service = models.ForeignKey(Service, on_delete=models.CASCADE)
+    service = models.ManyToManyFields(Service, on_delete=models.CASCADE)
     master = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leads")
     date_time = models.DateTimeField()
     prepayment = models.DecimalField(max_digits=10, decimal_places=2, default=0)
