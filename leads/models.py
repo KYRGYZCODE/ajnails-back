@@ -85,4 +85,8 @@ class Lead(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.client.name if self.client else self.client_name} - {self.service} - {self.date_time}"
+        try:
+            client_name = self.client.name
+        except Exception:
+            client_name = self.client_name
+        return f"{client_name} - {self.service} - {self.date_time}"
