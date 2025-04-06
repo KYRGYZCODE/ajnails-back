@@ -48,16 +48,18 @@ class Lead(models.Model):
         verbose_name_plural = "Лиды"
         ordering = ['-created_at']
 
-    def clean(self):
-        import re
-        from django.core.exceptions import ValidationError
+    def save(self, *args, **kwargs):
+        self.full_clean(exclude=["service"])
     
-        if not self.pk:
-            if self.phone and not re.match(r'^\d{9}$', self.phone):
-                raise ValidationError("Номер телефона должен состоять из 9 цифр (например, 550990123).")
+        if not self.client:
+            client, created = Client.objects.get_or_create(
+                phone=self.phone,
+                defaults={'name': self.client_name or "Неизвестный"}
+            )
+            self.client = client
     
-            if not self.client and not self.phone:
-                raise ValidationError("Должен быть указан либо клиент, либо номер телефона.")
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
     
         if self.date_time and self.master and self.service.exists():
             for s in self.service.all():
@@ -70,16 +72,4 @@ class Lead(models.Model):
     
                 if not self.master.services.filter(id=s.id).exists():
                     raise ValidationError(f"Мастер {self.master} не оказывает услугу {s.name}.")
-
-
-    def save(self, *args, **kwargs):
-        self.clean()
-
-        if not self.client:
-            client, created = Client.objects.get_or_create(
-                phone=self.phone,
-                defaults={'name': self.client_name or "Неизвестный"}
-            )
-            self.client = client
-
-        super().save(*args, **kwargs)
+    
