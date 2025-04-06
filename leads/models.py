@@ -83,7 +83,3 @@ class Lead(models.Model):
             self.client = client
 
         super().save(*args, **kwargs)
-
-    def __str__(self):
-        client_name = self.client_name
-        return f"{client_name} - {self.service} - {self.date_time}"
