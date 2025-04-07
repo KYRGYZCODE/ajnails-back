@@ -418,3 +418,135 @@ class FinancialReportView(APIView):
             return Response({
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class NewClientsReportView(APIView):
+    @swagger_auto_schema(
+        operation_description="Генерация отчета о новых клиентах за указанный период",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'type': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Тип отчета: day, week, month",
+                    enum=['day', 'week', 'month'],
+                    default='month'
+                ),
+                'date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Дата в формате YYYY-MM-DD (по умолчанию текущая дата)",
+                    format='date'
+                ),
+                'start_date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Начальная дата периода в формате YYYY-MM-DD",
+                    format='date'
+                ),
+                'end_date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Конечная дата периода в формате YYYY-MM-DD",
+                    format='date'
+                ),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Отчет успешно создан",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'period': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'start_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                                'end_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                                'type': openapi.Schema(type=openapi.TYPE_STRING),
+                            }
+                        ),
+                        'new_clients_count': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Неверные параметры запроса",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            500: openapi.Response(
+                description="Ошибка сервера",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            )
+        },
+        tags=['Отчеты по клиентам']
+    )
+    def post(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            report_type = 'custom'
+            
+            if data.get('start_date') and data.get('end_date'):
+                start_date = datetime.strptime(data.get('start_date'), '%Y-%m-%d').date()
+                end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
+                report_type = 'custom'
+            
+            else:
+                report_type = data.get('type', 'month')
+                
+                date_str = data.get('date')
+                if date_str:
+                    base_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                else:
+                    base_date = timezone.now().date()
+                
+                if report_type == 'day':
+                    start_date = base_date
+                    end_date = base_date
+                
+                elif report_type == 'week':
+                    start_date = base_date - timedelta(days=base_date.weekday())
+                    end_date = start_date + timedelta(days=6)
+                
+                elif report_type == 'month':
+                    start_date = base_date.replace(day=1)
+                    next_month = base_date + relativedelta(months=1)
+                    end_date = (next_month.replace(day=1) - timedelta(days=1))
+                
+                else:
+                    return Response({
+                        'error': f'Неверный тип отчета: {report_type}. Должен быть "day", "week" или "month"'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+            
+            new_clients_count = Client.objects.filter(
+                created_at__gte=start_datetime,
+                created_at__lte=end_datetime
+            ).count()
+            
+            return Response({
+                'period': {
+                    'start_date': start_date.strftime('%Y-%m-%d'),
+                    'end_date': end_date.strftime('%Y-%m-%d'),
+                    'type': report_type
+                },
+                'new_clients_count': new_clients_count
+            })
+            
+        except ValueError as e:
+            return Response({
+                'error': f'Ошибка формата даты: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
