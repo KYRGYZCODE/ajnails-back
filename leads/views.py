@@ -550,3 +550,96 @@ class NewClientsReportView(APIView):
             return Response({
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AverageBookingsReportView(APIView):
+    @swagger_auto_schema(
+        operation_description="Генерация отчета о среднем количестве записей за день, неделю или месяц",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'type': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Тип отчета: day, week, month (по умолчанию 'month')",
+                    enum=['week', 'month'],
+                ),
+                'date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Дата в формате YYYY-MM-DD (по умолчанию сегодняшняя)",
+                    format='date'
+                ),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Отчет успешно создан",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'period': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'start_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                                'end_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                                'type': openapi.Schema(type=openapi.TYPE_STRING),
+                            }
+                        ),
+                        'total_bookings': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'days_in_period': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'average_bookings_per_day': openapi.Schema(type=openapi.TYPE_NUMBER, format='float'),
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Неверные параметры запроса",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+        },
+        tags=['Отчеты по записям']
+    )
+    def post(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            report_type = data.get('type', 'month')
+            if report_type not in ['week', 'month']:
+                return Response({'error': 'Неверный тип отчета. Используй day, week или month.'}, status=400)
+
+            date_str = data.get('date')
+            base_date = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else timezone.now().date()
+
+            if report_type == 'week':
+                start_date = base_date - timedelta(days=base_date.weekday())
+                end_date = start_date + timedelta(days=6)
+
+            elif report_type == 'month':
+                start_date = base_date.replace(day=1)
+                end_date = (start_date + relativedelta(months=1)) - timedelta(days=1)
+
+            period_days = (end_date - start_date).days + 1
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+
+            leads = Lead.objects.filter(date_time__range=(start_datetime, end_datetime))
+            total_bookings = leads.count()
+            average_bookings_per_day = round(total_bookings / period_days, 2) if period_days > 0 else 0
+
+            return Response({
+                'period': {
+                    'start_date': start_date.strftime('%Y-%m-%d'),
+                    'end_date': end_date.strftime('%Y-%m-%d'),
+                    'type': report_type
+                },
+                'total_bookings': total_bookings,
+                'days_in_period': period_days,
+                'average_bookings_per_day': average_bookings_per_day
+            })
+
+        except ValueError as e:
+            return Response({'error': f'Неверный формат даты: {str(e)}'}, status=400)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
