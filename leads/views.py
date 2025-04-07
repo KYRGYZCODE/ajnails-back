@@ -247,7 +247,7 @@ class LeadConfirmationViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=['get'])
     def pending(self, request):
-        pending_leads = Lead.objects.filter(is_confirmed=False).order_by('-created_at')
+        pending_leads = Lead.objects.filter(is_confirmed=None).order_by('-created_at')
 
         paginator = PageNumberPagination()
         paginated_leads = paginator.paginate_queryset(pending_leads, request)
@@ -275,11 +275,39 @@ class LeadConfirmationViewSet(viewsets.ViewSet):
         if not isinstance(lead_ids, list):
             return Response({"error": "Неверный формат данных"}, status=status.HTTP_400_BAD_REQUEST)
 
-        updated_leads = Lead.objects.filter(id__in=lead_ids, is_confirmed=False).update(is_confirmed=True)
+        updated_leads = Lead.objects.filter(id__in=lead_ids, is_confirmed=None).update(is_confirmed=True)
 
         return Response({
             "message": f"Успешно подтверждено {updated_leads} лидов"
         })
+    
+    @swagger_auto_schema(
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'lead_ids': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Items(type=openapi.TYPE_INTEGER),
+                    description="Список ID лидов для отклонения"
+                ),
+            },
+            required=['lead_ids']
+        ),
+        responses={200: "Успешно подтверждено", 400: "Ошибка в запросе"}
+    )
+    @action(detail=False, methods=['post'])
+    def reject(self, request):
+        lead_ids = request.data.get('lead_ids', [])
+
+        if not isinstance(lead_ids, list):
+            return Response({"error": "Неверный формат данных"}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_leads = Lead.objects.filter(id__in=lead_ids, is_confirmed=None).update(is_confirmed=False)
+
+        return Response({
+            "message": f"Успешно отклонено {updated_leads} лидов"
+        })
+
 
 
 class FinancialReportView(APIView):
@@ -637,6 +665,127 @@ class AverageBookingsReportView(APIView):
                 'total_bookings': total_bookings,
                 'days_in_period': period_days,
                 'average_bookings_per_day': average_bookings_per_day
+            })
+
+        except ValueError as e:
+            return Response({'error': f'Неверный формат даты: {str(e)}'}, status=400)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+        
+
+class LeadsApprovalStatsReportView(APIView):
+    @swagger_auto_schema(
+        operation_description="Отчет по соотношению одобренных и отклоненных заявок за день, неделю, месяц или свой период",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['type'],
+            properties={
+                'type': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Тип отчета: day, week, month(по умолчанию 'month')",
+                    enum=['day', 'week', 'month']
+                ),
+                'date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Дата в формате YYYY-MM-DD (для day/week/month)",
+                    format='date'
+                ),
+                'start_date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Начало периода",
+                    format='date'
+                ),
+                'end_date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Конец периода",
+                    format='date'
+                ),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Статистика одобренных и отклоненных лидов",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'period': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'start_date': openapi.Schema(type=openapi.TYPE_STRING),
+                                'end_date': openapi.Schema(type=openapi.TYPE_STRING),
+                                'type': openapi.Schema(type=openapi.TYPE_STRING),
+                            }
+                        ),
+                        'total': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'approved': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'rejected': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'approval_rate_percent': openapi.Schema(type=openapi.TYPE_NUMBER, format='float'),
+                        'rejection_rate_percent': openapi.Schema(type=openapi.TYPE_NUMBER, format='float'),
+                    }
+                )
+            )
+        },
+        tags=['Отчеты по записям']
+    )
+    def post(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            report_type = 'custom'
+            
+            if data.get('start_date') and data.get('end_date'):
+                start_date = datetime.strptime(data.get('start_date'), '%Y-%m-%d').date()
+                end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
+                report_type = 'custom'
+            
+            else:
+                report_type = data.get('type', 'month')
+                
+                date_str = data.get('date')
+                if date_str:
+                    base_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                else:
+                    base_date = timezone.now().date()
+                
+                if report_type == 'day':
+                    start_date = base_date
+                    end_date = base_date
+                
+                elif report_type == 'week':
+                    start_date = base_date - timedelta(days=base_date.weekday())
+                    end_date = start_date + timedelta(days=6)
+                
+                elif report_type == 'month':
+                    start_date = base_date.replace(day=1)
+                    next_month = base_date + relativedelta(months=1)
+                    end_date = (next_month.replace(day=1) - timedelta(days=1))
+                
+                else:
+                    return Response({
+                        'error': f'Неверный тип отчета: {report_type}. Должен быть "day", "week" или "month"'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+
+            leads = Lead.objects.filter(date_time__range=(start_datetime, end_datetime))
+            approved = leads.filter(is_confirmed=True).count()
+            rejected = leads.filter(is_confirmed=False).count()
+            total = approved + rejected
+
+            approval_rate = round((approved / total) * 100, 2) if total > 0 else 0
+            rejection_rate = round((rejected / total) * 100, 2) if total > 0 else 0
+
+            return Response({
+                'period': {
+                    'start_date': start_date.strftime('%Y-%m-%d'),
+                    'end_date': end_date.strftime('%Y-%m-%d'),
+                    'type': report_type
+                },
+                'total': total,
+                'approved': approved,
+                'rejected': rejected,
+                'approval_rate_percent': approval_rate,
+                'rejection_rate_percent': rejection_rate
             })
 
         except ValueError as e:
