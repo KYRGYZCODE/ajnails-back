@@ -8,6 +8,7 @@ User = settings.AUTH_USER_MODEL
 class Client(models.Model):
     phone = models.CharField(max_length=20, unique=True, verbose_name="Номер телефона")
     name = models.CharField(max_length=255, verbose_name="Имя клиента")
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Клиент"
@@ -35,7 +36,7 @@ class Lead(models.Model):
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     client_name = models.CharField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
-    service = models.ManyToManyField(Service, blank=True, null=True)
+    service = models.ManyToManyField(Service, blank=True)
     master = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leads")
     date_time = models.DateTimeField()
     prepayment = models.DecimalField(max_digits=10, decimal_places=2, default=0)

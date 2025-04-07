@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ServiceViewSet, LeadViewSet, ClientViewSet, LeadConfirmationViewSet
+from .views import FinancialReportView, ServiceViewSet, LeadViewSet, ClientViewSet, LeadConfirmationViewSet
 
 router = DefaultRouter()
 router.register(r'services', ServiceViewSet, basename='service')
@@ -10,4 +10,6 @@ router.register('pendings', LeadConfirmationViewSet, basename='pending-confirmat
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('financial-report/', FinancialReportView.as_view(), name='financial_report'),
+
 ]

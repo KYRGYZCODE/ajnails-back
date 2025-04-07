@@ -5,12 +5,16 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.views import APIView
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.utils.timezone import now
 from django.db.models import Q
 from django.utils.dateparse import parse_date
 from django.contrib.auth import get_user_model
+from decimal import Decimal
+from dateutil.relativedelta import relativedelta
+from django.utils import timezone
 from .models import Client, Service, Lead
 from .serializers import ClientSerializer, ServiceSerializer,  LeadSerializer
 from users.serializers import UserGet
@@ -276,3 +280,141 @@ class LeadConfirmationViewSet(viewsets.ViewSet):
         return Response({
             "message": f"Успешно подтверждено {updated_leads} лидов"
         })
+
+
+class FinancialReportView(APIView):
+    @swagger_auto_schema(
+        operation_description="Генерация финансового отчета за указанный период",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'type': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Тип отчета: day, week, month",
+                    enum=['day', 'week', 'month'],
+                    default='month'
+                ),
+                'date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Дата в формате YYYY-MM-DD (по умолчанию текущая дата)",
+                    format='date'
+                ),
+                'start_date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Начальная дата периода в формате YYYY-MM-DD",
+                    format='date'
+                ),
+                'end_date': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Конечная дата периода в формате YYYY-MM-DD",
+                    format='date'
+                ),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Отчет успешно создан",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'period': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'start_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                                'end_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
+                                'type': openapi.Schema(type=openapi.TYPE_STRING),
+                            }
+                        ),
+                        'total_amount': openapi.Schema(type=openapi.TYPE_NUMBER, format='float'),
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Неверные параметры запроса",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            500: openapi.Response(
+                description="Ошибка сервера",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            )
+        },
+        tags=['Финансовые отчеты']
+    )
+    def post(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            report_type = 'custom'
+            
+            if data.get('start_date') and data.get('end_date'):
+                start_date = datetime.strptime(data.get('start_date'), '%Y-%m-%d').date()
+                end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
+                report_type = 'custom'
+            
+            else:
+                report_type = data.get('type', 'month')
+                
+                date_str = data.get('date')
+                if date_str:
+                    base_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                else:
+                    base_date = timezone.now().date()
+                
+                if report_type == 'day':
+                    start_date = base_date
+                    end_date = base_date
+                
+                elif report_type == 'week':
+                    start_date = base_date - timedelta(days=base_date.weekday())
+                    end_date = start_date + timedelta(days=6)
+                
+                elif report_type == 'month':
+                    start_date = base_date.replace(day=1)
+                    next_month = base_date + relativedelta(months=1)
+                    end_date = (next_month.replace(day=1) - timedelta(days=1))
+                
+                else:
+                    return Response({
+                        'error': f'Неверный тип отчета: {report_type}. Должен быть "day", "week" или "month"'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+            
+            leads = Lead.objects.filter(
+                is_confirmed=True,
+                date_time__gte=start_datetime,
+                date_time__lte=end_datetime
+            )
+            
+            total_amount = Decimal('0.00')
+            for lead in leads:
+                for service in lead.service.all():
+                    total_amount += service.price
+            
+            return Response({
+                'period': {
+                    'start_date': start_date.strftime('%Y-%m-%d'),
+                    'end_date': end_date.strftime('%Y-%m-%d'),
+                    'type': report_type
+                },
+                'total_amount': float(total_amount)
+            })
+            
+        except ValueError as e:
+            return Response({
+                'error': f'Ошибка формата даты: {str(e)}'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
