@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import User
+from .models import User, EmployeeSchedule
 
 class UserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()
@@ -26,6 +26,8 @@ class UserSerializer(serializers.ModelSerializer):
         from leads.serializers import ServiceSerializer
         representation = super().to_representation(instance)
         representation["services"] = ServiceSerializer(instance.services, many=True).data
+        if instance.schedule.exists():
+            representation['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
         return representation
 
 class UserGet(serializers.ModelSerializer):
@@ -73,3 +75,36 @@ class CustomTokenRefreshSerializer(TokenRefreshSerializer):
         
         data['refresh'] = str(new_refresh)
         return data
+
+
+class EmployeeScheduleSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = EmployeeSchedule
+        fields = '__all__'
+        extra_kwargs = {
+            'employee': {'write_only': True}
+        }
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['weekday_name'] = instance.get_weekday_display()
+        return representation
+    
+    def validate(self, attrs):
+        if attrs['start_time'] >= attrs['end_time']:
+            raise serializers.ValidationError('Время начала должно быть раньше времени окончания.')
+        employee = attrs.get('employee')
+        weekday = attrs.get('weekday')
+
+        qs = EmployeeSchedule.objects.filter(employee=employee, weekday=weekday)
+
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise serializers.ValidationError({
+                'weekday': 'Для этого сотрудника уже есть расписание в этот день недели.'
+            })
+
+        return attrs

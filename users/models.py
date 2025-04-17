@@ -98,3 +98,26 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name = "Пользователь"
         verbose_name_plural = "Пользователи"
 
+
+class EmployeeSchedule(models.Model):
+    WEEKDAY_CHOICES = (
+        (1, 'monday'),
+        (2, 'tuesday'),
+        (3, 'wednesday'),
+        (4, 'thursday'),
+        (5, 'friday'),
+        (6, 'saturday'),
+        (7, 'sunday')
+    )
+    employee = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='Работник', related_name='schedule')
+    weekday = models.SmallIntegerField(choices=WEEKDAY_CHOICES, verbose_name='День недели')
+    start_time = models.TimeField(verbose_name='Начало рабочего дня')
+    end_time = models.TimeField(verbose_name='Конец рабочего дня')
+
+    def __str__(self):
+        return f'{self.employee.email} | {self.get_weekday_display()} {self.start_time} - {self.end_time}'
+    
+    class Meta:
+        verbose_name = 'Рабочий день'
+        verbose_name_plural = 'Расписания сотрудников'
+        ordering = ['weekday']

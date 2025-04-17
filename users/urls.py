@@ -1,9 +1,10 @@
 from rest_framework.routers import SimpleRouter
 from django.urls import path, include
-from .views import CustomTokenObtainPairView, CustomTokenRefreshView, RegisterView, UserViewSet, MeView, EmployeeListView
+from .views import CustomTokenObtainPairView, CustomTokenRefreshView, RegisterView, UserViewSet, MeView, EmployeeListView, EmployeeScheduleViewSet
 
 router = SimpleRouter()
 router.register('users', UserViewSet)
+router.register('employees/schedule', EmployeeScheduleViewSet)
 
 urlpatterns = [
     path('auth/register/', RegisterView.as_view(), name='register'),

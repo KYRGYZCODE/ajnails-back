@@ -17,8 +17,8 @@ from drf_yasg import openapi
 
 
 from leads.models import Lead, Service
-from .models import User
-from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSerializer, UserChangePassword, UserRegistration, UserSerializer, FireUser
+from .models import User, EmployeeSchedule
+from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSerializer, UserChangePassword, UserRegistration, UserSerializer, FireUser, EmployeeScheduleSerializer
 
 
 class EmployeeListView(ListAPIView):
@@ -181,3 +181,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 class CustomTokenRefreshView(TokenRefreshView):
     serializer_class = CustomTokenRefreshSerializer
+
+
+class EmployeeScheduleViewSet(ModelViewSet):
+    queryset = EmployeeSchedule.objects.all()
+    serializer_class = EmployeeScheduleSerializer
