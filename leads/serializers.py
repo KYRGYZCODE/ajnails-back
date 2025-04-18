@@ -1,7 +1,9 @@
+import asyncio
 from datetime import timedelta
 from rest_framework import serializers
 
 from users.models import EmployeeSchedule
+from users.utils import send_order_message
 from .models import Service, Lead, Client
 from users.serializers import UserGet
 
@@ -95,6 +97,29 @@ class LeadSerializer(serializers.ModelSerializer):
                     )
                     
         return data
+    
+    def create(self, validated_data):
+        lead = super().create(validated_data)
+
+        client_name = lead.client.name if lead.client else lead.client_name or "Без имени"
+        phone = lead.phone or "—"
+        service_name = lead.service.name if lead.service else "Без услуги"
+        service_duration = lead.service.duration if lead.service else "—"
+        master_name = lead.master.first_name or lead.master.email
+        date_str = lead.date_time.strftime("%d.%m.%Y %H:%M")
+
+        message = (
+            f"📥 *Новая запись!*\n"
+            f"👤 Клиент: *{client_name}*\n"
+            f"📞 Телефон: `{phone}`\n"
+            f"🛠 Услуга: *{service_name}* ({service_duration} мин)\n"
+            f"🧑‍🔧 Мастер: *{master_name}*\n"
+            f"🕒 Дата и время: *{date_str}*\n"
+        )
+
+        asyncio.run(send_order_message(message))
+
+        return lead
 
 
 class BusySlotSerializer(serializers.Serializer):
