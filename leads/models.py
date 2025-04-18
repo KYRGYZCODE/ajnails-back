@@ -1,3 +1,4 @@
+from datetime import timedelta
 import re
 from django.db import models
 from django.core.exceptions import ValidationError
@@ -36,7 +37,7 @@ class Lead(models.Model):
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     client_name = models.CharField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
-    service = models.ManyToManyField(Service, blank=True)
+    service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True, blank=True, related_name='leads')
     master = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leads")
     date_time = models.DateTimeField()
     prepayment = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -48,11 +49,49 @@ class Lead(models.Model):
         verbose_name = "Лид"
         verbose_name_plural = "Лиды"
         ordering = ['-created_at']
+    
+    def __str__(self):
+        client_info = self.client.name if self.client else self.client_name or self.phone or "Без имени"
+        service_name = self.service.name if self.service else "Без услуги"
+        master_name = self.master.first_name or self.master.email
+        date = self.date_time.strftime("%d.%m.%Y %H:%M")
 
+        return f"{client_info} - {service_name} у {master_name} ({date})"
+
+    def clean(self):
+        from users.models import EmployeeSchedule
+        
+        super().clean()
+        
+        if self.date_time and self.master:
+            weekday = self.date_time.isoweekday()
+            
+            schedules = EmployeeSchedule.objects.filter(employee=self.master, weekday=weekday)
+            
+            if not schedules.exists():
+                day_name = self.date_time.strftime('%A')
+                raise ValidationError(f"Мастер не работает в этот день недели ({day_name})")
+            
+            schedule = schedules.first()
+            start_time = schedule.start_time
+            end_time = schedule.end_time
+            
+            appointment_time = self.date_time.time()
+            
+            if appointment_time < start_time or appointment_time > end_time:
+                raise ValidationError(f"Время записи {appointment_time} вне рабочего графика мастера "
+                                    f"({start_time} - {end_time}) на {self.date_time.strftime('%A')}")
+            
+            if self.service:
+                service_end_time = (self.date_time + timedelta(minutes=self.service.duration)).time()
+                if service_end_time > end_time:
+                    raise ValidationError(f"Услуга {self.service.name} (длительность {self.service.duration} мин) "
+                                        f"не вместится в рабочее время мастера до {end_time}")
+        
     def save(self, *args, **kwargs):
         self.full_clean(exclude=["service"])
     
-        if not self.client:
+        if not self.client and self.phone:
             client, created = Client.objects.get_or_create(
                 phone=self.phone,
                 defaults={'name': self.client_name or "Неизвестный"}
@@ -62,15 +101,37 @@ class Lead(models.Model):
         is_new = self.pk is None
         super().save(*args, **kwargs)
     
-        if self.date_time and self.master and self.service.exists():
-            for s in self.service.all():
-                if Lead.objects.filter(
-                    date_time=self.date_time,
-                    master=self.master,
-                    service=s
-                ).exclude(pk=self.pk).exists():
-                    raise ValidationError(f"У этого мастера уже есть запись на {self.date_time} для услуги {s.name}.")
-    
-                if not self.master.services.filter(id=s.id).exists():
-                    raise ValidationError(f"Мастер {self.master} не оказывает услугу {s.name}.")
-    
+        if self.date_time and self.master and self.service:
+            if Lead.objects.filter(
+                date_time=self.date_time,
+                master=self.master,
+                service=self.service
+            ).exclude(pk=self.pk).exists():
+                raise ValidationError(f"У этого мастера уже есть запись на {self.date_time} для услуги {self.service.name}.")
+            
+            if not self.master.services.filter(id=self.service.id).exists():
+                raise ValidationError(f"Мастер {self.master} не оказывает услугу {self.service.name}.")
+            
+            PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)
+            POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
+            
+            service_duration = timedelta(minutes=self.service.duration)
+            appointment_end = self.date_time + service_duration
+            
+            same_day_appointments = Lead.objects.filter(
+                master=self.master,
+                date_time__date=self.date_time.date()
+            ).exclude(pk=self.pk)
+            
+            for existing_lead in same_day_appointments:
+                if existing_lead.service:
+                    existing_service_duration = timedelta(minutes=existing_lead.service.duration)
+                    
+                    busy_start = existing_lead.date_time - PRE_APPOINTMENT_BUFFER
+                    busy_end = existing_lead.date_time + existing_service_duration + POST_APPOINTMENT_BUFFER
+                    
+                    if (self.date_time < busy_end and appointment_end > busy_start):
+                        raise ValidationError(
+                            f"Это время пересекается с существующей записью на {existing_lead.date_time} "
+                            f"(учитывая буфер 30 минут до и 10 минут после записи)."
+                        )

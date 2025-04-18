@@ -15,6 +15,8 @@ from django.contrib.auth import get_user_model
 from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
+
+from users.models import EmployeeSchedule
 from .models import Client, Service, Lead
 from .serializers import ClientSerializer, ServiceSerializer,  LeadSerializer
 from users.serializers import UserGet
@@ -234,6 +236,166 @@ class LeadViewSet(viewsets.ModelViewSet):
             
             return Response(day_data)
         
+        except ValueError:
+            return Response(
+                {"error": "Неверный формат даты. Используйте YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'date', 
+                openapi.IN_QUERY, 
+                description="Дата для получения свободных слотов (формат YYYY-MM-DD)",
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'master_id', 
+                openapi.IN_QUERY, 
+                description="ID мастера",
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+            openapi.Parameter(
+                'service_id', 
+                openapi.IN_QUERY, 
+                description="ID услуги",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'date': openapi.Schema(type=openapi.TYPE_STRING),
+                    'master_id': openapi.Schema(type=openapi.TYPE_STRING),
+                    'service_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'available_slots': openapi.Schema(
+                        type=openapi.TYPE_ARRAY, 
+                        items=openapi.Items(type=openapi.TYPE_STRING)
+                    )
+                }
+            ),
+            400: "Ошибка в параметрах запроса",
+            404: "Мастер или услуга не найдены"
+        }
+    )
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
+    def available_slots(self, request):
+        # Get query parameters
+        date_str = request.query_params.get('date')
+        master_id = request.query_params.get('master_id')
+        service_id = request.query_params.get('service_id')
+        
+        # Constants for buffer times
+        PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)  # Buffer before appointment
+        POST_APPOINTMENT_BUFFER = timedelta(minutes=10)  # Extra buffer after appointment (in addition to service time)
+        
+        # Validate parameters
+        if not all([date_str, master_id, service_id]):
+            return Response(
+                {"error": "Требуются параметры date, master_id и service_id"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Parse date
+            input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            # Get master and service
+            try:
+                master = User.objects.get(uuid=master_id, is_active=True, is_employee=True)
+            except User.DoesNotExist:
+                return Response(
+                    {"error": "Мастер не найден"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            try:
+                service = Service.objects.get(id=service_id)
+            except Service.DoesNotExist:
+                return Response(
+                    {"error": "Услуга не найдена"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check if master provides the service
+            if not master.services.filter(id=service_id).exists():
+                return Response(
+                    {"error": f"Мастер {master} не предоставляет услугу {service.name}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get weekday (1-7, where 1 is Monday)
+            weekday = input_date.isoweekday()
+            
+            # Get master's schedule for this day
+            try:
+                schedule = EmployeeSchedule.objects.get(employee=master, weekday=weekday)
+                start_time = schedule.start_time
+                end_time = schedule.end_time
+            except EmployeeSchedule.DoesNotExist:
+                # If no specific schedule, use default schedule
+                start_time = master.schedule_start
+                end_time = master.schedule_end
+            
+            # Generate all possible slots in 10-minute intervals
+            all_slots = []
+            current_time = datetime.combine(input_date, start_time)
+            day_end = datetime.combine(input_date, end_time)
+            
+            # Service duration in minutes
+            service_duration = timedelta(minutes=service.duration)
+            slot_interval = timedelta(minutes=10)
+            
+            while current_time + service_duration <= day_end:
+                all_slots.append(current_time)
+                current_time += slot_interval
+            
+            # Get busy slots from leads
+            busy_leads = Lead.objects.filter(
+                master=master,
+                date_time__date=input_date
+            ).prefetch_related('service')
+            
+            # Create a list of busy periods with buffers
+            busy_periods = []
+            for lead in busy_leads:
+                for lead_service in lead.service.all():
+                    # Calculate start and end of the busy period with buffers
+                    busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER  # 30 min before appointment
+                    busy_end = lead.date_time + timedelta(minutes=lead_service.duration) + POST_APPOINTMENT_BUFFER  # service duration + 10 min after
+                    
+                    busy_periods.append((busy_start, busy_end))
+            
+            # Filter out busy slots
+            available_slots = []
+            for slot in all_slots:
+                slot_aware = make_aware(slot)
+                slot_end = slot_aware + service_duration
+                
+                # Check if this slot overlaps with any busy period
+                is_slot_available = True
+                for busy_start, busy_end in busy_periods:
+                    # Check for overlap
+                    if (slot_aware < busy_end and slot_end > busy_start):
+                        is_slot_available = False
+                        break
+                
+                if is_slot_available:
+                    available_slots.append(slot.strftime('%H:%M'))
+            
+            # Return available slots
+            return Response({
+                'date': date_str,
+                'master_id': master_id,
+                'service_id': service_id,
+                'available_slots': available_slots
+            })
+            
         except ValueError:
             return Response(
                 {"error": "Неверный формат даты. Используйте YYYY-MM-DD"},
