@@ -1,6 +1,7 @@
 import asyncio
 from datetime import timedelta
 from rest_framework import serializers
+from django.utils import timezone
 
 from users.models import EmployeeSchedule
 from users.utils import send_order_message
@@ -40,6 +41,10 @@ class LeadSerializer(serializers.ModelSerializer):
         
         if not date_time or not master:
             return data
+        
+        current_datetime = timezone.now()
+        if date_time < current_datetime:
+            raise serializers.ValidationError("Невозможно создать запись на прошедшую дату и время")
             
         weekday = date_time.isoweekday()
         

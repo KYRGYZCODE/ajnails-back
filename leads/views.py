@@ -285,16 +285,13 @@ class LeadViewSet(viewsets.ModelViewSet):
     )
     @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def available_slots(self, request):
-        # Get query parameters
         date_str = request.query_params.get('date')
         master_id = request.query_params.get('master_id')
         service_id = request.query_params.get('service_id')
         
-        # Constants for buffer times
-        PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)  # Buffer before appointment
-        POST_APPOINTMENT_BUFFER = timedelta(minutes=10)  # Extra buffer after appointment (in addition to service time)
+        PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)
+        POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
         
-        # Validate parameters
         if not all([date_str, master_id, service_id]):
             return Response(
                 {"error": "Требуются параметры date, master_id и service_id"},
@@ -302,10 +299,15 @@ class LeadViewSet(viewsets.ModelViewSet):
             )
         
         try:
-            # Parse date
             input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
             
-            # Get master and service
+            current_date = timezone.now().date()
+            if input_date < current_date:
+                return Response(
+                    {"error": "Невозможно получить слоты на прошедшую дату"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
             try:
                 master = User.objects.get(uuid=master_id, is_active=True, is_employee=True)
             except User.DoesNotExist:
@@ -322,65 +324,68 @@ class LeadViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Check if master provides the service
             if not master.services.filter(id=service_id).exists():
                 return Response(
                     {"error": f"Мастер {master} не предоставляет услугу {service.name}"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Get weekday (1-7, where 1 is Monday)
             weekday = input_date.isoweekday()
             
-            # Get master's schedule for this day
-            try:
-                schedule = EmployeeSchedule.objects.get(employee=master, weekday=weekday)
-                start_time = schedule.start_time
-                end_time = schedule.end_time
-            except EmployeeSchedule.DoesNotExist:
-                # If no specific schedule, use default schedule
-                start_time = master.schedule_start
-                end_time = master.schedule_end
+            schedules = EmployeeSchedule.objects.filter(employee=master, weekday=weekday)
             
-            # Generate all possible slots in 10-minute intervals
+            if not schedules.exists():
+                day_name = input_date.strftime('%A')
+                return Response(
+                    {"error": f"Мастер не работает в этот день недели ({day_name})"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            schedule = schedules.first()
+            start_time = schedule.start_time
+            end_time = schedule.end_time
+            
             all_slots = []
             current_time = datetime.combine(input_date, start_time)
             day_end = datetime.combine(input_date, end_time)
             
-            # Service duration in minutes
             service_duration = timedelta(minutes=service.duration)
             slot_interval = timedelta(minutes=10)
             
+            now = timezone.now()
+            today = now.date()
+            
             while current_time + service_duration <= day_end:
+                if input_date == today and current_time.time() <= now.time():
+                    current_time += slot_interval
+                    continue
+                    
                 all_slots.append(current_time)
                 current_time += slot_interval
             
-            # Get busy slots from leads
             busy_leads = Lead.objects.filter(
                 master=master,
                 date_time__date=input_date
-            ).prefetch_related('service')
+            )
             
-            # Create a list of busy periods with buffers
             busy_periods = []
             for lead in busy_leads:
-                for lead_service in lead.service.all():
-                    # Calculate start and end of the busy period with buffers
-                    busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER  # 30 min before appointment
-                    busy_end = lead.date_time + timedelta(minutes=lead_service.duration) + POST_APPOINTMENT_BUFFER  # service duration + 10 min after
+                if lead.service:
+                    busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER
+                    busy_end = lead.date_time + timedelta(minutes=lead.service.duration) + POST_APPOINTMENT_BUFFER
+
+                    busy_start = make_aware(busy_start)
+                    busy_end = make_aware(busy_end)
                     
                     busy_periods.append((busy_start, busy_end))
             
-            # Filter out busy slots
             available_slots = []
             for slot in all_slots:
                 slot_aware = make_aware(slot)
                 slot_end = slot_aware + service_duration
                 
-                # Check if this slot overlaps with any busy period
                 is_slot_available = True
                 for busy_start, busy_end in busy_periods:
-                    # Check for overlap
                     if (slot_aware < busy_end and slot_end > busy_start):
                         is_slot_available = False
                         break
@@ -388,7 +393,6 @@ class LeadViewSet(viewsets.ModelViewSet):
                 if is_slot_available:
                     available_slots.append(slot.strftime('%H:%M'))
             
-            # Return available slots
             return Response({
                 'date': date_str,
                 'master_id': master_id,
