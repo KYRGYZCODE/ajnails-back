@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from rest_framework import status, filters
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.views import APIView
@@ -22,57 +22,106 @@ from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSeri
 
 
 class EmployeeListView(ListAPIView):
-    queryset = User.objects.filter(is_active=True, is_employee=True)
     serializer_class = UserSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['services']
-
+    
     def get_queryset(self):
-        queryset = super().get_queryset()
-        service_id = self.request.query_params.get('service')
+        service_id = self.request.query_params.get('service_id')
         date_str = self.request.query_params.get('date')
         time_str = self.request.query_params.get('time')
-
-        if service_id:
-            queryset = queryset.filter(services__id=service_id)
-
+        
+        if not service_id:
+            return User.objects.none()
+            
+        queryset = User.objects.filter(
+            is_active=True, 
+            is_employee=True,
+            services__id=service_id
+        )
+            
         if date_str and time_str:
             try:
-                date_time = make_aware(datetime.strptime(f"{date_str} {time_str}", "%d-%m-%Y %H:%M"))
-                service = Service.objects.filter(id=service_id).first()
-
-                if service:
+                input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                input_time = datetime.strptime(time_str, '%H:%M').time()
+                date_time = datetime.combine(input_date, input_time)
+                date_time = make_aware(date_time)
+                
+                try:
+                    service = Service.objects.get(id=service_id)
                     service_duration = timedelta(minutes=service.duration)
+                    
+                    appointment_end = date_time + service_duration
+                    weekday = input_date.isoweekday()
+                    
+                    available_masters = queryset.filter(schedule__weekday=weekday)
+                    
+                    available_master_ids = []
+                    for master in available_masters:
+                        schedules = EmployeeSchedule.objects.filter(
+                            employee=master, 
+                            weekday=weekday
+                        )
+                        if schedules.exists():
+                            schedule = schedules.first()
+                            # Приводим start_time и end_time к типу "aware"
+                            schedule_start_time = make_aware(datetime.combine(input_date, schedule.start_time))
+                            schedule_end_time = make_aware(datetime.combine(input_date, schedule.end_time))
 
-                    busy_masters = Lead.objects.filter(
-                        Q(date_time__lt=date_time + service_duration, date_time__gte=date_time)
-                    ).values_list('master_id', flat=True)
+                            if (input_time >= schedule_start_time.time() and (date_time + service_duration) <= schedule_end_time):
+                                
+                                PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)
+                                POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
+                                
+                                existing_appointments = Lead.objects.filter(
+                                    master=master,
+                                    date_time__date=input_date
+                                )
+                                
+                                is_available = True
+                                for appt in existing_appointments:
+                                    if appt.service:
+                                        # Приводим busy_start и busy_end к типу "aware"
+                                        busy_start = make_aware(appt.date_time - PRE_APPOINTMENT_BUFFER)
+                                        busy_end = make_aware(appt.date_time + timedelta(minutes=appt.service.duration) + POST_APPOINTMENT_BUFFER)
 
-                    queryset = queryset.exclude(id__in=busy_masters)
-
+                                        if (date_time < busy_end and appointment_end > busy_start):
+                                            is_available = False
+                                            break
+                                
+                                if is_available:
+                                    available_master_ids.append(master.uuid)
+                    
+                    queryset = queryset.filter(uuid__in=available_master_ids)
+                    
+                except Service.DoesNotExist:
+                    return User.objects.none()
+                    
             except ValueError:
-                pass
-
-        return queryset
+                return Response(
+                    {"error": "Invalid date or time format. Use YYYY-MM-DD for date and HH:MM for time."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            return queryset
 
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
-                'service',
+                'service_id',
                 openapi.IN_QUERY,
-                description="Фильтрация по ID услуги",
-                type=openapi.TYPE_INTEGER
+                description="ID of the selected service (required)",
+                type=openapi.TYPE_INTEGER,
+                required=True
             ),
             openapi.Parameter(
                 'date',
                 openapi.IN_QUERY,
-                description="Дата в формате ДД-ММ-ГГГГ",
+                description="Date in YYYY-MM-DD format",
                 type=openapi.TYPE_STRING
             ),
             openapi.Parameter(
                 'time',
                 openapi.IN_QUERY,
-                description="Время в формате ЧЧ:ММ",
+                description="Time in HH:MM format",
                 type=openapi.TYPE_STRING
             ),
         ]

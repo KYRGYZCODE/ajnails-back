@@ -24,6 +24,7 @@ class Service(models.Model):
     duration = models.IntegerField(verbose_name="Длительность (мин)", default=30)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=500)
     image = models.ImageField(upload_to='services/', null=True, blank=True)
+    is_long = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Услуга"
@@ -39,9 +40,10 @@ class Lead(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True)
     service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True, blank=True, related_name='leads')
     master = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leads")
-    date_time = models.DateTimeField()
+    date_time = models.DateTimeField(null=True, blank=True)
     prepayment = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     is_confirmed = models.BooleanField(default=None, null=True, blank=True)
+    date = models.DateField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
