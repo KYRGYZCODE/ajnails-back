@@ -20,6 +20,12 @@ class ClientSerializer(serializers.ModelSerializer):
         model = Client
         fields = '__all__'
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['visits_count'] = Lead.objects.filter(client=instance).count()
+        
+        return representation
+
 
 class LeadSerializer(serializers.ModelSerializer):
     class Meta:
