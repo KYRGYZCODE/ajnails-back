@@ -25,7 +25,7 @@ class UserSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         from leads.serializers import ServiceSerializer
         representation = super().to_representation(instance)
-        representation["services"] = ServiceSerializer(instance.services).data
+        representation["services"] = ServiceSerializer(instance.services, many=True).data
         if instance.schedule.exists():
             representation['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
         return representation
