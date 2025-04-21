@@ -24,8 +24,8 @@ class ClientSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['visits_count'] = Lead.objects.filter(client=instance).count()
-        representation['total_sum'] = Lead.objects.aggregate(total=Sum(F('service__price'))['total'] or 0
-        
+        representation['total_sum'] = Lead.objects.aggregate(total=Sum(F('service__price')))['total'] or 0
+ 
         return representation
 
 
