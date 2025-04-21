@@ -141,6 +141,7 @@ class UserViewSet(ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        is_employee = self.request.query_params.get("is_employee")
         project_id = self.request.query_params.get("project_id")
         show_fired = self.request.query_params.get("show_fired")
 
@@ -151,6 +152,9 @@ class UserViewSet(ModelViewSet):
             queryset = queryset.filter(is_fired=True)
         else:
             queryset = queryset.filter(is_active=True)
+
+        if is_employee:
+            queryset = queryset.filter(is_employee=True)
         
         return queryset
     
@@ -162,8 +166,22 @@ class UserViewSet(ModelViewSet):
         elif self.action == 'change_password':
             return UserChangePassword
         return super().get_serializer_class()
+
     
-    
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'is_employee',
+                openapi.IN_QUERY,
+                description="Filter employee users",
+                type=openapi.TYPE_BOOLEAN,
+                required=False
+            )
+        ]
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
     @action(methods=['post'], detail=True)
     def fire(self, request, pk=None):
         user = get_object_or_404(User, pk=pk)
