@@ -18,7 +18,7 @@ from drf_yasg import openapi
 
 from leads.models import Lead, Service
 from .models import User, EmployeeSchedule
-from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSerializer, UserChangePassword, UserRegistration, UserSerializer, FireUser, EmployeeScheduleSerializer
+from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSerializer, UserChangePassword, UserRegistration, UserSerializer, FireUser, EmployeeScheduleSerializer, ScheduleListSerializer
 
 
 class EmployeeListView(ListAPIView):
@@ -63,7 +63,6 @@ class EmployeeListView(ListAPIView):
                         )
                         if schedules.exists():
                             schedule = schedules.first()
-                            # Приводим start_time и end_time к типу "aware"
                             schedule_start_time = make_aware(datetime.combine(input_date, schedule.start_time))
                             schedule_end_time = make_aware(datetime.combine(input_date, schedule.end_time))
 
@@ -80,7 +79,6 @@ class EmployeeListView(ListAPIView):
                                 is_available = True
                                 for appt in existing_appointments:
                                     if appt.service:
-                                        # Приводим busy_start и busy_end к типу "aware"
                                         busy_start = make_aware(appt.date_time - PRE_APPOINTMENT_BUFFER)
                                         busy_end = make_aware(appt.date_time + timedelta(minutes=appt.service.duration) + POST_APPOINTMENT_BUFFER)
 
@@ -165,6 +163,8 @@ class UserViewSet(ModelViewSet):
             return UserRegistration
         elif self.action == 'change_password':
             return UserChangePassword
+        elif self.action == 'add_schedule':
+            return ScheduleListSerializer
         return super().get_serializer_class()
 
     
@@ -211,6 +211,16 @@ class UserViewSet(ModelViewSet):
         user.set_password(request.data.get('new_password'))
         user.save()
         return Response({'message': 'Password changed'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def add_schedule(self, request, pk=None):
+        user = get_object_or_404(User, pk=pk)
+        serializer = ScheduleListSerializer(data=request.data, context={'user': user})
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'status': 'Расписания добавлены'}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]

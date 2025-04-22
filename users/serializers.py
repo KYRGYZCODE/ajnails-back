@@ -108,3 +108,32 @@ class EmployeeScheduleSerializer(serializers.ModelSerializer):
             })
 
         return attrs
+
+
+class ScheduleCreation(serializers.ModelSerializer):
+    class Meta:
+        model = EmployeeSchedule
+        fields = ('weekday', 'start_time', 'end_time')
+
+class ScheduleListSerializer(serializers.Serializer):
+    schedules = ScheduleCreation(many=True)
+
+    def validate_schedules(self, value):
+        seen_weekdays = set()
+        for schedule in value:
+            weekday = schedule['weekday']
+            if weekday in seen_weekdays:
+                raise serializers.ValidationError(f"Дублирующийся день недели: {weekday}")
+            seen_weekdays.add(weekday)
+        return value
+
+    def create(self, validated_data):
+        user = self.context.get('user')
+        schedules_data = validated_data['schedules']
+
+        for schedule in schedules_data:
+            schedule['employee'] = user
+
+        return EmployeeSchedule.objects.bulk_create([
+            EmployeeSchedule(**data) for data in schedules_data
+        ])
