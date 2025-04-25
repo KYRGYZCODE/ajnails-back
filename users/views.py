@@ -18,7 +18,7 @@ from drf_yasg import openapi
 
 from leads.models import Lead, Service
 from .models import User, EmployeeSchedule
-from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSerializer, UserChangePassword, UserRegistration, UserSerializer, FireUser, EmployeeScheduleSerializer, ScheduleListSerializer
+from .serializers import CustomTokenObtainPairSerializer, CustomTokenRefreshSerializer, UserChangePassword, UserRegistration, UserSerializer, FireUser, EmployeeScheduleSerializer, ScheduleListSerializer, EmployeeScheduleUpdateSerializer
 
 
 class EmployeeListView(ListAPIView):
@@ -165,6 +165,8 @@ class UserViewSet(ModelViewSet):
             return UserChangePassword
         elif self.action == 'add_schedule':
             return ScheduleListSerializer
+        elif self.action == 'partial_update':
+            return EmployeeScheduleUpdateSerializer
         return super().get_serializer_class()
 
     

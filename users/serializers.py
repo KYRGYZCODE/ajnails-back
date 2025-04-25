@@ -1,3 +1,4 @@
+import json
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -137,3 +138,50 @@ class ScheduleListSerializer(serializers.Serializer):
         return EmployeeSchedule.objects.bulk_create([
             EmployeeSchedule(**data) for data in schedules_data
         ])
+
+class EmployeeScheduleUpdateSerializer(serializers.ModelSerializer):
+    schedules = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
+    delete_schedules = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
+    update_schedules = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
+
+    class Meta:
+        model = User
+        fields = '__all__'
+    
+    def to_internal_value(self, data):
+        data = data.copy()
+        json_fields = ['schedules', 'delete_schedules', 'update_schedules']
+        
+        for key in json_fields:
+            if key in data and isinstance(data[key], str):
+                try:
+                    data[key] = json.loads(data[key])
+                except:
+                    raise serializers.ValidationError({key: 'Неверный формат JSON'})
+        
+        return super().to_internal_value(data)
+    
+    def update(self, instance, validated_data):
+        new_schedules = validated_data.pop('schedules', [])
+        delete_schedules = validated_data.pop('delete_schedules', [])
+        update_schedules = validated_data.pop('update_schedules', [])
+
+        if delete_schedules:
+            EmployeeSchedule.objects.filter(id__in=delete_schedules, employee=instance).delete()
+        
+        for schedule in new_schedules:
+            EmployeeSchedule.objects.create(employee=instance, **schedule)
+    
+        if update_schedules:
+            for schedule_data in update_schedules:
+                schedule_id = schedule_data.get('id')
+                try:
+                    employee_schedule = EmployeeSchedule.objects.get(id=schedule_id, employee=instance)
+                    for key, value in schedule_data.items():
+                        setattr(employee_schedule, key, value)
+                    employee_schedule.save()
+                except EmployeeSchedule.DoesNotExist:
+                    raise serializers.ValidationError({'update_schedules': f'Расписание с ID {schedule_id} не найдено.'})
+                
+        return super().update(instance, validated_data)
+    
