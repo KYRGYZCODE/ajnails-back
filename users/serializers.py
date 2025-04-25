@@ -141,7 +141,7 @@ class ScheduleListSerializer(serializers.Serializer):
 
 class EmployeeScheduleUpdateSerializer(serializers.ModelSerializer):
     schedules = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
-    delete_schedules = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
+    delete_schedules = serializers.ListField(write_only=True, required=False)
     update_schedules = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
 
     class Meta:
