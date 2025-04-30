@@ -594,6 +594,7 @@ class ServiceMastersWithSlotsView(APIView):
                 properties={
                     'date': openapi.Schema(type=openapi.TYPE_STRING),
                     'service_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'is_long_service': openapi.Schema(type=openapi.TYPE_BOOLEAN),
                     'masters': openapi.Schema(
                         type=openapi.TYPE_ARRAY, 
                         items=openapi.Schema(
@@ -668,6 +669,26 @@ class ServiceMastersWithSlotsView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+            if service.is_long:
+                result_masters = []
+                for master in masters:
+                    master_schedule = master_schedules.filter(employee=master).first()
+                    if master_schedule:
+                        master_data = {
+                            'uuid': str(master.uuid),
+                            'name': f"{master.first_name} {master.last_name}".strip(),
+                            'avatar': request.build_absolute_uri(master.avatar.url) if master.avatar else None,
+                            'available_slots': []
+                        }
+                        result_masters.append(master_data)
+                
+                return Response({
+                    'date': date_str,
+                    'service_id': service_id,
+                    'is_long_service': True,
+                    'masters': result_masters
+                })
+
             leads = Lead.objects.filter(
                 master__in=masters,
                 date_time__date=input_date
@@ -732,6 +753,7 @@ class ServiceMastersWithSlotsView(APIView):
             return Response({
                 'date': date_str,
                 'service_id': service_id,
+                'is_long_service': False,
                 'masters': result_masters
             })
             

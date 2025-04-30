@@ -35,16 +35,24 @@ class Service(models.Model):
 
 
 class Lead(models.Model):
+    REMINDER_CHOICES = (
+        (30, "За 30 минут"),
+        (60, "За 1 час"),
+        (120, "За 2 часа"),
+        (180, "За 3 часа"),
+        (1440, "За 1 день"),
+    )
+    
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     client_name = models.CharField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True, blank=True, related_name='leads')
-    master = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leads")
+    master = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name="leads")
     date_time = models.DateTimeField(null=True, blank=True)
     prepayment = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     is_confirmed = models.BooleanField(default=None, null=True, blank=True)
     date = models.DateField(null=True, blank=True)
-
+    reminder_minutes = models.IntegerField(choices=REMINDER_CHOICES, default=60, verbose_name="Время напоминания")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -56,7 +64,7 @@ class Lead(models.Model):
         client_info = self.client.name if self.client else self.client_name or self.phone or "Без имени"
         service_name = self.service.name if self.service else "Без услуги"
         master_name = self.master.first_name or self.master.email
-        date = self.date_time.strftime("%d.%m.%Y %H:%M")
+        date = self.date_time.strftime("%d.%m.%Y %H:%M") if self.date_time else self.date.strftime("%d.%m.%Y") if self.date else "Нет даты"
 
         return f"{client_info} - {service_name} у {master_name} ({date})"
 
@@ -64,6 +72,11 @@ class Lead(models.Model):
         from users.models import EmployeeSchedule
         
         super().clean()
+        
+        if self.service and self.service.is_long:
+            if not self.date:
+                self.date = self.date_time.date() if self.date_time else None
+            return
         
         if self.date_time and self.master:
             weekday = self.date_time.isoweekday()
@@ -91,7 +104,10 @@ class Lead(models.Model):
                                         f"не вместится в рабочее время мастера до {end_time}")
         
     def save(self, *args, **kwargs):
-        self.full_clean(exclude=["service"])
+        if self.service and self.service.is_long and not self.date_time and self.date:
+            self.full_clean(exclude=["date_time", "service"])
+        else:
+            self.full_clean(exclude=["service"])
     
         if not self.client and self.phone:
             client, created = Client.objects.get_or_create(
@@ -102,6 +118,9 @@ class Lead(models.Model):
     
         is_new = self.pk is None
         super().save(*args, **kwargs)
+    
+        if self.service and self.service.is_long:
+            return
     
         if self.date_time and self.master and self.service:
             if Lead.objects.filter(

@@ -46,6 +46,27 @@ class LeadSerializer(serializers.ModelSerializer):
         date_time = data.get('date_time')
         master = data.get('master')
         service = data.get('service')
+        date = data.get('date')
+        
+        if service and service.is_long:
+            if not date and not date_time:
+                raise serializers.ValidationError("Для сложной услуги необходимо указать хотя бы дату")
+            
+            if not master:
+                raise serializers.ValidationError("Необходимо указать мастера")
+                
+            if date and not date_time:
+                current_date = timezone.now().date()
+                if date < current_date:
+                    raise serializers.ValidationError("Невозможно создать запись на прошедшую дату")
+                    
+                weekday = date.isoweekday()
+                schedules = EmployeeSchedule.objects.filter(employee=master, weekday=weekday)
+                if not schedules.exists():
+                    day_name = date.strftime('%A')
+                    raise serializers.ValidationError(f"Мастер не работает в этот день недели ({day_name})")
+                
+                return data
         
         if not date_time or not master:
             return data
@@ -78,7 +99,7 @@ class LeadSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(f"Услуга {service.name} (длительность {service.duration} мин) "
                                                 f"не вместится в рабочее время мастера до {end_time}")
                                                 
-        if 'id' in self.context.get('view').kwargs:
+        if 'id' in self.context.get('view', {}).kwargs if self.context.get('view') else {}:
             lead_id = self.context.get('view').kwargs['id']
         else:
             lead_id = None
@@ -112,6 +133,10 @@ class LeadSerializer(serializers.ModelSerializer):
         return data
     
     def create(self, validated_data):
+        if validated_data.get('service') and validated_data.get('service').is_long:
+            if not validated_data.get('date') and validated_data.get('date_time'):
+                validated_data['date'] = validated_data['date_time'].date()
+                
         lead = super().create(validated_data)
 
         client_name = lead.client.name if lead.client else lead.client_name or "Без имени"
@@ -119,7 +144,17 @@ class LeadSerializer(serializers.ModelSerializer):
         service_name = lead.service.name if lead.service else "Без услуги"
         service_duration = lead.service.duration if lead.service else "—"
         master_name = lead.master.first_name or lead.master.email
-        date_str = lead.date_time.strftime("%d.%m.%Y %H:%M")
+        
+        is_long_service = lead.service and lead.service.is_long
+        
+        if is_long_service and not lead.date_time:
+            date_str = lead.date.strftime("%d.%m.%Y") if lead.date else "Дата не указана"
+            date_info = f"Дата: *{date_str}* (Менеджер перезвонит для уточнения времени)"
+        else:
+            date_str = lead.date_time.strftime("%d.%m.%Y %H:%M") if lead.date_time else "Время не указано"
+            date_info = f"Дата и время: *{date_str}*"
+        
+        reminder_text = dict(Lead.REMINDER_CHOICES).get(lead.reminder_minutes, "За 1 час")
 
         message = (
             f"📥 *Новая запись!*\n"
@@ -127,7 +162,8 @@ class LeadSerializer(serializers.ModelSerializer):
             f"📞 Телефон: `{phone}`\n"
             f"🛠 Услуга: *{service_name}* ({service_duration} мин)\n"
             f"🧑‍🔧 Мастер: *{master_name}*\n"
-            f"🕒 Дата и время: *{date_str}*\n"
+            f"🕒 {date_info}\n"
+            f"⏰ Напоминание: *{reminder_text}*\n"
         )
 
         asyncio.run(send_order_message(message))
