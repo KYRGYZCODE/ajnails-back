@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import SimpleRouter
-from .views import AverageBookingsReportView, FinancialReportView, NewClientsReportView, ServiceAvailableSlotsView, ServiceViewSet, LeadViewSet, ClientViewSet, LeadConfirmationViewSet, LeadsApprovalStatsReportView
+from .views import AverageBookingsReportView, FinancialReportView, NewClientsReportView, ServiceAvailableSlotsView, ServiceViewSet, LeadViewSet, ClientViewSet, LeadConfirmationViewSet, LeadsApprovalStatsReportView, ServiceMastersWithSlotsView
 
 router = SimpleRouter()
 router.register(r'services', ServiceViewSet, basename='service')
@@ -10,6 +10,7 @@ router.register('pendings', LeadConfirmationViewSet, basename='pending-confirmat
 
 urlpatterns = [
     path('services/available-slots/', ServiceAvailableSlotsView.as_view(), name='service-available-slots'),
+    path('employees/available-slots/', ServiceMastersWithSlotsView.as_view(), name='employees-available-slots'),
     path('', include(router.urls)),
     path('reports/financial-report/', FinancialReportView.as_view(), name='financial_report'),
     path('reports/new-clients-report/', NewClientsReportView.as_view(), name='new_clients_report'),

@@ -570,6 +570,176 @@ class ServiceAvailableSlotsView(APIView):
                 status=400
             )
 
+class ServiceMastersWithSlotsView(APIView):
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'service_id', 
+                openapi.IN_QUERY, 
+                description="ID of the selected service",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'date', 
+                openapi.IN_QUERY, 
+                description="Date for available slots (format YYYY-MM-DD)",
+                type=openapi.TYPE_STRING,
+                required=True
+            ),
+        ],
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'date': openapi.Schema(type=openapi.TYPE_STRING),
+                    'service_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'masters': openapi.Schema(
+                        type=openapi.TYPE_ARRAY, 
+                        items=openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'uuid': openapi.Schema(type=openapi.TYPE_STRING),
+                                'name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'avatar': openapi.Schema(type=openapi.TYPE_STRING, nullable=True),
+                                'available_slots': openapi.Schema(
+                                    type=openapi.TYPE_ARRAY,
+                                    items=openapi.Schema(type=openapi.TYPE_STRING)
+                                )
+                            }
+                        )
+                    )
+                }
+            ),
+            400: "Error in request parameters",
+            404: "Service not found or no masters available"
+        }
+    )
+    def get(self, request):
+        service_id = request.query_params.get('service_id')
+        date_str = request.query_params.get('date')
+        
+        if not all([service_id, date_str]):
+            return Response(
+                {"error": "service_id and date are required parameters"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            service = Service.objects.get(id=service_id)
+        except Service.DoesNotExist:
+            return Response(
+                {"error": "Service not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        try:
+            input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            current_date = datetime.now().date()
+            if input_date < current_date:
+                return Response(
+                    {"error": "Cannot get slots for past dates"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            masters = User.objects.filter(
+                is_active=True,
+                is_employee=True,
+                services__id=service_id
+            )
+            
+            if not masters.exists():
+                return Response(
+                    {"error": "No masters available for this service"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            weekday = input_date.isoweekday()
+            
+            master_schedules = EmployeeSchedule.objects.filter(
+                employee__in=masters,
+                weekday=weekday
+            )
+            
+            if not master_schedules.exists():
+                return Response(
+                    {"error": "No masters working on this day"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            leads = Lead.objects.filter(
+                master__in=masters,
+                date_time__date=input_date
+            )
+
+            PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)
+            POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
+            service_duration = timedelta(minutes=service.duration)
+            slot_duration = 10
+            
+            result_masters = []
+            
+            for master in masters:
+                master_schedule = master_schedules.filter(employee=master).first()
+                if not master_schedule:
+                    continue
+                
+                slot_time = datetime.combine(input_date, master_schedule.start_time)
+                day_end = datetime.combine(input_date, master_schedule.end_time)
+                
+                all_slots = []
+                while slot_time + service_duration <= day_end:
+                    all_slots.append(slot_time)
+                    slot_time += timedelta(minutes=slot_duration)
+                
+                master_leads = leads.filter(master=master)
+                busy_periods = []
+                
+                for lead in master_leads:
+                    if lead.service:
+                        busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER
+                        busy_end = lead.date_time + timedelta(minutes=lead.service.duration) + POST_APPOINTMENT_BUFFER
+                        
+                        busy_start = make_aware(busy_start) if not busy_start.tzinfo else busy_start
+                        busy_end = make_aware(busy_end) if not busy_end.tzinfo else busy_end
+                        
+                        busy_periods.append((busy_start, busy_end))
+                
+                available_slots = []
+                for slot in all_slots:
+                    slot_aware = make_aware(slot) if not slot.tzinfo else slot
+                    slot_end = slot_aware + service_duration
+                    
+                    is_available = True
+                    for busy_start, busy_end in busy_periods:
+                        if (slot_aware < busy_end and slot_end > busy_start):
+                            is_available = False
+                            break
+                    
+                    if is_available:
+                        available_slots.append(slot.strftime('%H:%M'))
+                
+                if available_slots:
+                    master_data = {
+                        'uuid': str(master.uuid),
+                        'name': f"{master.first_name} {master.last_name}".strip(),
+                        'avatar': request.build_absolute_uri(master.avatar.url) if master.avatar else None,
+                        'available_slots': sorted(available_slots)
+                    }
+                    result_masters.append(master_data)
+            
+            return Response({
+                'date': date_str,
+                'service_id': service_id,
+                'masters': result_masters
+            })
+            
+        except ValueError:
+            return Response(
+                {"error": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 class LeadConfirmationViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
