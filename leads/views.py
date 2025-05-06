@@ -350,7 +350,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             day_end = datetime.combine(input_date, end_time)
             
             service_duration = timedelta(minutes=service.duration)
-            slot_interval = timedelta(minutes=10)
+            slot_interval = timedelta(minutes=30)
             
             now = timezone.now()
             today = now.date()
@@ -498,7 +498,7 @@ class ServiceAvailableSlotsView(APIView):
             latest_end = max(schedule.end_time for schedule in schedules)
             
             all_slots = []
-            slot_duration = 10
+            slot_duration = 30
             slot_time = datetime.combine(input_date, earliest_start)
             day_end = datetime.combine(input_date, latest_end)
             service_duration = timedelta(minutes=service.duration)
@@ -697,7 +697,7 @@ class ServiceMastersWithSlotsView(APIView):
             PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)
             POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
             service_duration = timedelta(minutes=service.duration)
-            slot_duration = 10
+            slot_duration = 30
             
             result_masters = []
             
