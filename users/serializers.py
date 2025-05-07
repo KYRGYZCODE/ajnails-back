@@ -3,7 +3,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import User, EmployeeSchedule
+from .models import WEEKDAY_RUSSIAN, User, EmployeeSchedule
 
 class UserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField()
@@ -90,6 +90,7 @@ class EmployeeScheduleSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['weekday_name'] = instance.get_weekday_display()
+        representation['weekday_name_russian'] = WEEKDAY_RUSSIAN[instance.weekday]
         return representation
     
     def validate(self, attrs):

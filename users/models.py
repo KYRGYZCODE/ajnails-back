@@ -22,6 +22,16 @@ GENDER_CHOICES = (
     ('female', 'Female')
 )
 
+WEEKDAY_RUSSIAN = {
+    1: 'Понедельник',
+    2: 'Вторник',
+    3: 'Среда',
+    4: 'Четверг',
+    5: 'Пятница',
+    6: 'Суббота',
+    7: 'Воскресенье'
+}
+
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -109,6 +119,7 @@ class EmployeeSchedule(models.Model):
         (6, 'saturday'),
         (7, 'sunday')
     )
+
     employee = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='Работник', related_name='schedule')
     weekday = models.SmallIntegerField(choices=WEEKDAY_CHOICES, verbose_name='День недели')
     start_time = models.TimeField(verbose_name='Начало рабочего дня')
