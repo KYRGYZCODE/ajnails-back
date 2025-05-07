@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import viewsets, permissions, status
@@ -762,6 +762,186 @@ class ServiceMastersWithSlotsView(APIView):
                 {"error": "Invalid date format. Use YYYY-MM-DD"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+class AvailableDatesView(APIView):
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'service_id', 
+                openapi.IN_QUERY, 
+                description="ID of the selected service",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'year', 
+                openapi.IN_QUERY, 
+                description="Selected year",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'month', 
+                openapi.IN_QUERY, 
+                description="Selected month (from 1 to 12)",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'month': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'service_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'available_dates': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_STRING)
+                    )
+                }
+            ),
+            400: "Error in request parameters",
+            404: "Service not found"
+        }
+    )
+    def get(self, request):
+        service_id = request.query_params.get('service_id')
+        month = request.query_params.get('month')
+        year = request.query_params.get('year')
+        
+        if not all([service_id, month, year]):
+            return Response(
+                {"error": "service_id, month and year are required parameters"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            service_id = int(service_id)
+            month = int(month)
+            year = int(year)
+        except ValueError:
+            return Response(
+                {"error": "service_id, month and year must be integers"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not (1 <= month <= 12):
+            return Response(
+                {"error": "Month must be between 1 and 12"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            service = Service.objects.get(id=service_id)
+        except Service.DoesNotExist:
+            return Response(
+                {"error": "Service not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        current_date = datetime.now().date()
+        
+        first_day = date(year, month, 1)
+        
+        if month == 12:
+            last_day = date(year, 12, 31)
+        else:
+            last_day = date(year, month + 1, 1) - timedelta(days=1)
+        
+        masters = User.objects.filter(
+            is_active=True,
+            is_employee=True,
+            services__id=service_id
+        )
+        
+        if not masters.exists():
+            return Response(
+                {"error": "No masters available for this service"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        available_dates = []
+        current_day = max(first_day, current_date)
+        
+        while current_day <= last_day:
+            weekday = current_day.isoweekday()
+            
+            master_schedules = EmployeeSchedule.objects.filter(
+                employee__in=masters,
+                weekday=weekday
+            )
+            
+            if master_schedules.exists():
+                if service.is_long:
+                    available_dates.append(current_day.strftime('%Y-%m-%d'))
+                else:
+                    leads = Lead.objects.filter(
+                        master__in=masters,
+                        date_time__date=current_day
+                    )
+                    
+                    PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)
+                    POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
+                    service_duration = timedelta(minutes=service.duration)
+                    slot_duration = 30
+                    
+                    date_has_slots = False
+                    
+                    for master in masters:
+                        master_schedule = master_schedules.filter(employee=master).first()
+                        if not master_schedule:
+                            continue
+                        
+                        slot_time = datetime.combine(current_day, master_schedule.start_time)
+                        day_end = datetime.combine(current_day, master_schedule.end_time)
+                        
+                        all_slots = []
+                        while slot_time + service_duration <= day_end:
+                            all_slots.append(slot_time)
+                            slot_time += timedelta(minutes=slot_duration)
+                        
+                        master_leads = leads.filter(master=master)
+                        busy_periods = []
+                        
+                        for lead in master_leads:
+                            if lead.service:
+                                busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER
+                                busy_end = lead.date_time + timedelta(minutes=lead.service.duration) + POST_APPOINTMENT_BUFFER
+                                
+                                busy_start = make_aware(busy_start) if not busy_start.tzinfo else busy_start
+                                busy_end = make_aware(busy_end) if not busy_end.tzinfo else busy_end
+                                
+                                busy_periods.append((busy_start, busy_end))
+                        
+                        for slot in all_slots:
+                            slot_aware = make_aware(slot) if not slot.tzinfo else slot
+                            slot_end = slot_aware + service_duration
+                            
+                            is_available = True
+                            for busy_start, busy_end in busy_periods:
+                                if (slot_aware < busy_end and slot_end > busy_start):
+                                    is_available = False
+                                    break
+                            
+                            if is_available:
+                                date_has_slots = True
+                                break
+                        
+                        if date_has_slots:
+                            break
+                    
+                    if date_has_slots:
+                        available_dates.append(current_day.strftime('%Y-%m-%d'))
+            
+            current_day += timedelta(days=1)
+        
+        return Response({
+            'month': month,
+            'year': year,
+            'service_id': service_id,
+            'available_dates': available_dates
+        })
+
 
 class LeadConfirmationViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
