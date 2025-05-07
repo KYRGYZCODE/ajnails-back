@@ -1014,142 +1014,323 @@ class LeadConfirmationViewSet(viewsets.ViewSet):
 
 class FinancialReportView(APIView):
     @swagger_auto_schema(
-        operation_description="Генерация финансового отчета за указанный период",
+        operation_description="Генерация финансового отчета для графиков по дням или неделям",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 'type': openapi.Schema(
                     type=openapi.TYPE_STRING,
-                    description="Тип отчета: day, week, month",
-                    enum=['day', 'week', 'month'],
+                    description="Тип периода: week, month, quarter (макс. 3 месяца)",
+                    enum=['week', 'month', 'quarter'],
                     default='month'
                 ),
                 'date': openapi.Schema(
                     type=openapi.TYPE_STRING,
-                    description="Дата в формате YYYY-MM-DD (по умолчанию текущая дата)",
+                    description="Базовая дата в формате YYYY-MM-DD",
                     format='date'
                 ),
-                'start_date': openapi.Schema(
+                'group_by': openapi.Schema(
                     type=openapi.TYPE_STRING,
-                    description="Начальная дата периода в формате YYYY-MM-DD",
-                    format='date'
-                ),
-                'end_date': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description="Конечная дата периода в формате YYYY-MM-DD",
-                    format='date'
-                ),
+                    description='Группировка данных: по дням или по неделям',
+                    enum=['day', 'week'],
+                    default='day'
+                )
             }
         ),
-        responses={
-            200: openapi.Response(
-                description="Отчет успешно создан",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'period': openapi.Schema(
-                            type=openapi.TYPE_OBJECT,
-                            properties={
-                                'start_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
-                                'end_date': openapi.Schema(type=openapi.TYPE_STRING, format='date'),
-                                'type': openapi.Schema(type=openapi.TYPE_STRING),
-                            }
-                        ),
-                        'total_amount': openapi.Schema(type=openapi.TYPE_NUMBER, format='float'),
-                    }
-                )
-            ),
-            400: openapi.Response(
-                description="Неверные параметры запроса",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'error': openapi.Schema(type=openapi.TYPE_STRING)
-                    }
-                )
-            ),
-            500: openapi.Response(
-                description="Ошибка сервера",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'error': openapi.Schema(type=openapi.TYPE_STRING)
-                    }
-                )
-            )
-        },
         tags=['Финансовые отчеты']
     )
     def post(self, request, *args, **kwargs):
         try:
             data = request.data
-            report_type = 'custom'
-            
-            if data.get('start_date') and data.get('end_date'):
-                start_date = datetime.strptime(data.get('start_date'), '%Y-%m-%d').date()
-                end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
-                report_type = 'custom'
-            
+            report_type = data.get('type', 'month')
+            group_by = data.get('group_by', 'day')
+            base_date_str = data.get('date')
+            base_date = datetime.strptime(base_date_str, '%Y-%m-%d').date() if base_date_str else timezone.now().date()
+
+            if report_type == 'week':
+                start_date = base_date - timedelta(days=base_date.weekday())
+                end_date = start_date + timedelta(days=6)
+            elif report_type == 'month':
+                start_date = base_date.replace(day=1)
+                next_month = base_date + relativedelta(months=1)
+                end_date = next_month.replace(day=1) - timedelta(days=1)
+            elif report_type == 'quarter':
+                start_date = base_date.replace(day=1)
+                next_quarter = base_date + relativedelta(months=3)
+                end_date = next_quarter.replace(day=1) - timedelta(days=1)
             else:
-                report_type = data.get('type', 'month')
-                
-                date_str = data.get('date')
-                if date_str:
-                    base_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                else:
-                    base_date = timezone.now().date()
-                
-                if report_type == 'day':
-                    start_date = base_date
-                    end_date = base_date
-                
-                elif report_type == 'week':
-                    start_date = base_date - timedelta(days=base_date.weekday())
-                    end_date = start_date + timedelta(days=6)
-                
-                elif report_type == 'month':
-                    start_date = base_date.replace(day=1)
-                    next_month = base_date + relativedelta(months=1)
-                    end_date = (next_month.replace(day=1) - timedelta(days=1))
-                
-                else:
-                    return Response({
-                        'error': f'Неверный тип отчета: {report_type}. Должен быть "day", "week" или "month"'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-            
-            start_datetime = datetime.combine(start_date, datetime.min.time())
-            end_datetime = datetime.combine(end_date, datetime.max.time())
-            
-            leads = Lead.objects.filter(
-                is_confirmed=True,
-                date_time__gte=start_datetime,
-                date_time__lte=end_datetime
-            )
-            
-            total_amount = Decimal('0.00')
-            for lead in leads:
-                for service in lead.service.all():
-                    total_amount += service.price
-            
+                return Response({'error': f'Неверный тип периода: {report_type}'}, status=400)
+
+            if (end_date - start_date).days > 92:
+                return Response({'error': 'Максимальный период — 3 месяца'}, status=400)
+
+            result_data = []
+
+            if group_by == 'day':
+                current_date = start_date
+                while current_date <= end_date:
+                    total = self._get_total_for_range(current_date, current_date)
+                    result_data.append({
+                        'date': current_date.strftime('%Y-%m-%d'),
+                        'total_amount': float(total)
+                    })
+                    current_date += timedelta(days=1)
+
+            elif group_by == 'week':
+                current_start = start_date
+                while current_start <= end_date:
+                    current_end = min(current_start + timedelta(days=6), end_date)
+                    total = self._get_total_for_range(current_start, current_end)
+                    result_data.append({
+                        'week_start': current_start.strftime('%Y-%m-%d'),
+                        'week_end': current_end.strftime('%Y-%m-%d'),
+                        'total_amount': float(total)
+                    })
+                    current_start += timedelta(days=7)
+            else:
+                return Response({'error': 'Параметр group_by должен быть "day" или "week"'}, status=400)
+
             return Response({
                 'period': {
                     'start_date': start_date.strftime('%Y-%m-%d'),
                     'end_date': end_date.strftime('%Y-%m-%d'),
                     'type': report_type
                 },
-                'total_amount': float(total_amount)
+                'group_by': group_by,
+                'data': result_data
             })
-            
+
         except ValueError as e:
-            return Response({
-                'error': f'Ошибка формата даты: {str(e)}'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Ошибка формата даты: {str(e)}'}, status=400)
         except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+    def _get_total_for_range(self, start_date, end_date):
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date, datetime.max.time())
+
+        leads = Lead.objects.filter(
+            is_confirmed=True,
+            date_time__gte=start_dt,
+            date_time__lte=end_dt
+        )
+
+        total = sum(
+            (lead.service.price for lead in leads),
+            Decimal('0.00')
+        )
+        return total
+
+class ClientStatsView(APIView):
+    @swagger_auto_schema(
+        operation_description="Получить соотношение новых и возвращающихся клиентов за указанный период.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["type"],
+            properties={
+                "type": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=["day", "week", "month"],
+                    description="Тип периода (день, неделя, месяц)",
+                    default="month"
+                ),
+                "date": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format="date",
+                    description="Дата в формате YYYY-MM-DD (используется как базовая для периода)"
+                ),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Успешный ответ с данными по клиентам",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "period": openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                "start_date": openapi.Schema(type=openapi.TYPE_STRING, format="date"),
+                                "end_date": openapi.Schema(type=openapi.TYPE_STRING, format="date"),
+                                "type": openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        ),
+                        "data": openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                "new_clients": openapi.Schema(type=openapi.TYPE_INTEGER),
+                                "returning_clients": openapi.Schema(type=openapi.TYPE_INTEGER)
+                            }
+                        )
+                    }
+                )
+            ),
+            400: openapi.Response(description="Ошибка запроса"),
+            500: openapi.Response(description="Ошибка сервера")
+        },
+        tags=["Клиенты"]
+    )
+    def post(self, request, *args, **kwargs):
+        try:
+            report_type = request.data.get('type', 'month')
+            date_str = request.data.get('date')
+            if date_str:
+                base_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            else:
+                base_date = timezone.now().date()
+
+            if report_type == 'day':
+                start_date = end_date = base_date
+            elif report_type == 'week':
+                start_date = base_date - timedelta(days=base_date.weekday())
+                end_date = start_date + timedelta(days=6)
+            elif report_type == 'month':
+                start_date = base_date.replace(day=1)
+                next_month = base_date + relativedelta(months=1)
+                end_date = next_month.replace(day=1) - timedelta(days=1)
+            else:
+                return Response({"error": "Неверный тип периода. Используйте 'day', 'week' или 'month'."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+
+            leads_in_period = Lead.objects.filter(
+                is_confirmed=True,
+                date_time__range=(start_datetime, end_datetime),
+                client__isnull=False
+            )
+
+            new_clients = 0
+            returning_clients = 0
+
+            for lead in leads_in_period.select_related('client'):
+                client = lead.client
+                first_lead = Lead.objects.filter(
+                    client=client,
+                    is_confirmed=True
+                ).order_by('date_time').first()
+
+                if first_lead and start_datetime <= first_lead.date_time <= end_datetime:
+                    new_clients += 1
+                else:
+                    returning_clients += 1
+
             return Response({
-                'error': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                "period": {
+                    "start_date": start_date.strftime('%Y-%m-%d'),
+                    "end_date": end_date.strftime('%Y-%m-%d'),
+                    "type": report_type
+                },
+                "data": {
+                    "new_clients": new_clients,
+                    "returning_clients": returning_clients
+                }
+            })
 
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class TotalClientsView(APIView):
+    def get(self, request):
+        cleints_count = Client.objects.all().count()
+        return Response({'total_clients': cleints_count})
+
+class LeadStatsView(APIView):
+    @swagger_auto_schema(
+        operation_description="Получить отчет по подтвержденным и неподтвержденным записям за указанный период (неделя/месяц).",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["type"],
+            properties={
+                "type": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=["week", "month"],
+                    description="Тип периода (неделя или месяц)",
+                    default="month"
+                ),
+                "date": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format="date",
+                    description="Дата в формате YYYY-MM-DD (будет использована как база для периода)"
+                ),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Успешный ответ с данными по подтвержденным и неподтвержденным записям",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "period": openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                "start_date": openapi.Schema(type=openapi.TYPE_STRING, format="date"),
+                                "end_date": openapi.Schema(type=openapi.TYPE_STRING, format="date"),
+                                "type": openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        ),
+                        "data": openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                "confirmed_leads": openapi.Schema(type=openapi.TYPE_INTEGER),
+                                "unconfirmed_leads": openapi.Schema(type=openapi.TYPE_INTEGER)
+                            }
+                        )
+                    }
+                )
+            ),
+            400: openapi.Response(description="Ошибка запроса"),
+            500: openapi.Response(description="Ошибка сервера")
+        },
+        tags=["Записи"]
+    )
+    def post(self, request, *args, **kwargs):
+        try:
+            report_type = request.data.get('type', 'month')
+            date_str = request.data.get('date')
+            if date_str:
+                base_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            else:
+                base_date = timezone.now().date()
+
+            if report_type == 'week':
+                start_date = base_date - timedelta(days=base_date.weekday())
+                end_date = start_date + timedelta(days=6)
+            elif report_type == 'month':
+                start_date = base_date.replace(day=1)
+                next_month = base_date + relativedelta(months=1)
+                end_date = next_month.replace(day=1) - timedelta(days=1)
+            else:
+                return Response({"error": "Неверный тип периода. Используйте 'week' или 'month'."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+
+            leads_in_period = Lead.objects.filter(
+                date_time__range=(start_datetime, end_datetime)
+            )
+
+            confirmed_leads = leads_in_period.filter(is_confirmed=True).count()
+            unconfirmed_leads = leads_in_period.filter(is_confirmed=False).count()
+
+            return Response({
+                "period": {
+                    "start_date": start_date.strftime('%Y-%m-%d'),
+                    "end_date": end_date.strftime('%Y-%m-%d'),
+                    "type": report_type
+                },
+                "data": {
+                    "confirmed_leads": confirmed_leads,
+                    "unconfirmed_leads": unconfirmed_leads
+                }
+            })
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        
 class NewClientsReportView(APIView):
     @swagger_auto_schema(
         operation_description="Генерация отчета о новых клиентах за указанный период",

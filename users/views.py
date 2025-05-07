@@ -265,3 +265,30 @@ class CustomTokenRefreshView(TokenRefreshView):
 class EmployeeScheduleViewSet(ModelViewSet):
     queryset = EmployeeSchedule.objects.all()
     serializer_class = EmployeeScheduleSerializer
+
+class MasterSummaryView(APIView):
+
+    def get(self, request, *args, **kwargs):
+        masters = User.objects.filter(is_employee=True)
+
+        result = []
+        for master in masters:
+            leads = Lead.objects.filter(master=master, is_confirmed=True)
+            total_leads = leads.count()
+            total_clients = leads.values('client').distinct().count()
+            
+            total_earnings = 0
+            for lead in leads.select_related('service'):
+                if lead.service:
+                    total_earnings += float(lead.service.price)
+            
+            result.append({
+                'uuid': str(master.uuid),
+                'full_name': f'{master.first_name} {master.last_name}',
+                'avatar': request.build_absolute_uri(master.avatar.url) if master.avatar else None,
+                'total_clients': total_clients,
+                'total_earnings': round(total_earnings, 2),
+                'total_leads': total_leads
+            })
+
+        return Response(result)
