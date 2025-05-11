@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import SimpleRouter
-from .views import AverageBookingsReportView, FinancialReportView, NewClientsReportView, ServiceAvailableSlotsView, ServiceViewSet, LeadViewSet, ClientViewSet, LeadConfirmationViewSet, LeadsApprovalStatsReportView, ServiceMastersWithSlotsView, AvailableDatesView, ClientStatsView, TotalClientsView, LeadStatsView
+from .views import AverageBookingsReportView, FinancialReportView, NewClientsReportView, ServiceAvailableSlotsView, ServiceViewSet, LeadViewSet, ClientViewSet, LeadConfirmationViewSet, LeadsApprovalStatsReportView, ServiceMastersWithSlotsView, AvailableDatesView, ClientStatsView, TotalClientsView, LeadStatsView, MyLeadsAPIView
 
 router = SimpleRouter()
 router.register(r'services', ServiceViewSet, basename='service')
@@ -19,7 +19,8 @@ urlpatterns = [
     path('available-dates/', AvailableDatesView.as_view(), name='available-dates'),
     path('reports/clients-statistics/', ClientStatsView.as_view(), name='client-stats'),
     path('reports/clients-total/', TotalClientsView.as_view(), name='clients-total'),
-    path('reports/lead-statistics/', LeadStatsView.as_view(), name='lead-stats')
+    path('reports/lead-statistics/', LeadStatsView.as_view(), name='lead-stats'),
+    path('my-leads/', MyLeadsAPIView.as_view(), name='my-leads')
 
 
 ]

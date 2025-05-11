@@ -5,6 +5,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -1675,3 +1676,12 @@ class LeadsApprovalStatsReportView(APIView):
             return Response({'error': f'Неверный формат даты: {str(e)}'}, status=400)
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+
+
+class MyLeadsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        user = request.user
+        leads = Lead.objects.filter(master=user, is_confirmed=False)
+        serializer = LeadSerializer(leads, many=True)
+        return Response(serializer.data)
