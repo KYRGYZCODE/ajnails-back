@@ -1682,6 +1682,10 @@ class MyLeadsAPIView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
         user = request.user
-        leads = Lead.objects.filter(master=user, is_confirmed=False)
+        leads = Lead.objects.filter(
+        master=user
+        ).filter(
+        Q(is_confirmed=False) | Q(is_confirmed__isnull=True)
+        )
         serializer = LeadSerializer(leads, many=True)
         return Response(serializer.data)
