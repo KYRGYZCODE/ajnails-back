@@ -40,6 +40,8 @@ class LeadSerializer(serializers.ModelSerializer):
         representation['service'] = ServiceSerializer(instance.service).data
         representation['master'] = UserGet(instance.master).data
         representation['client'] = ClientSerializer(instance.client).data if instance.client else None
+        date_field = instance.date if instance.date else instance.date_time
+        representation['weekday'] = date_field.isoweekday()
         return representation
     
     def validate(self, data):
