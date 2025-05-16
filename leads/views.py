@@ -701,6 +701,7 @@ class ServiceMastersWithSlotsView(APIView):
             POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
             service_duration = timedelta(minutes=service.duration)
             slot_duration = 30
+            booking_buffer = timedelta(minutes=30)
             
             result_masters = []
             
@@ -712,15 +713,17 @@ class ServiceMastersWithSlotsView(APIView):
                 slot_time = datetime.combine(input_date, master_schedule.start_time)
                 day_end = datetime.combine(input_date, master_schedule.end_time)
                 
-                slot_time = make_aware(slot_time) if not slot_time.tzinfo else slot_time
-                day_end = make_aware(day_end) if not day_end.tzinfo else day_end
+                if timezone.is_naive(slot_time):
+                    slot_time = timezone.make_aware(slot_time)
+                if timezone.is_naive(day_end):
+                    day_end = timezone.make_aware(day_end)
                 
                 all_slots = []
                 while slot_time + service_duration <= day_end:
                     if input_date == current_date:
-                        booking_buffer = timedelta(minutes=30)
-                        
-                        if slot_time >= current_datetime + booking_buffer:
+                        print(f"slot_time: {slot_time}, tzinfo: {slot_time.tzinfo}, type: {type(slot_time)}")
+                        print(f"current_datetime + booking_buffer: {current_datetime + booking_buffer}, tzinfo: {(current_datetime + booking_buffer).tzinfo}, type: {type(current_datetime + booking_buffer)}")
+                        if slot_time >= (current_datetime + booking_buffer):
                             all_slots.append(slot_time)
                     else:
                         all_slots.append(slot_time)
@@ -735,8 +738,10 @@ class ServiceMastersWithSlotsView(APIView):
                         busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER
                         busy_end = lead.date_time + timedelta(minutes=lead.service.duration) + POST_APPOINTMENT_BUFFER
                         
-                        busy_start = make_aware(busy_start) if not busy_start.tzinfo else busy_start
-                        busy_end = make_aware(busy_end) if not busy_end.tzinfo else busy_end
+                        if not busy_start.tzinfo:
+                            busy_start = timezone.make_aware(busy_start)
+                        if not busy_end.tzinfo:
+                            busy_end = timezone.make_aware(busy_end)
                         
                         busy_periods.append((busy_start, busy_end))
                 
@@ -957,8 +962,7 @@ class AvailableDatesView(APIView):
 
 class LeadConfirmationViewSet(viewsets.ViewSet):
     @swagger_auto_schema(
-        responses={200: "Список неподтвержденных лидов"}
-    )
+    responses={200: "Список неподтвержденных лидов"})
     @action(detail=False, methods=['get'])
     def pending(self, request):
         pending_leads = Lead.objects.filter(is_confirmed=None).order_by('-created_at')
