@@ -636,9 +636,11 @@ class ServiceMastersWithSlotsView(APIView):
             )
             
         try:
+            current_datetime = timezone.now()
+            current_date = current_datetime.date()
+            
             input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
             
-            current_date = datetime.now().date()
             if input_date < current_date:
                 return Response(
                     {"error": "Cannot get slots for past dates"},
@@ -710,9 +712,19 @@ class ServiceMastersWithSlotsView(APIView):
                 slot_time = datetime.combine(input_date, master_schedule.start_time)
                 day_end = datetime.combine(input_date, master_schedule.end_time)
                 
+                slot_time = make_aware(slot_time) if not slot_time.tzinfo else slot_time
+                day_end = make_aware(day_end) if not day_end.tzinfo else day_end
+                
                 all_slots = []
                 while slot_time + service_duration <= day_end:
-                    all_slots.append(slot_time)
+                    if input_date == current_date:
+                        booking_buffer = timedelta(minutes=30)
+                        
+                        if slot_time >= current_datetime + booking_buffer:
+                            all_slots.append(slot_time)
+                    else:
+                        all_slots.append(slot_time)
+                        
                     slot_time += timedelta(minutes=slot_duration)
                 
                 master_leads = leads.filter(master=master)
@@ -730,12 +742,11 @@ class ServiceMastersWithSlotsView(APIView):
                 
                 available_slots = []
                 for slot in all_slots:
-                    slot_aware = make_aware(slot) if not slot.tzinfo else slot
-                    slot_end = slot_aware + service_duration
+                    slot_end = slot + service_duration
                     
                     is_available = True
                     for busy_start, busy_end in busy_periods:
-                        if (slot_aware < busy_end and slot_end > busy_start):
+                        if (slot < busy_end and slot_end > busy_start):
                             is_available = False
                             break
                     
