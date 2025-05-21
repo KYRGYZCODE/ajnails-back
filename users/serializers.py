@@ -11,7 +11,12 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser',)
+        exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser', 'last_login')
+    
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже существует.")
+        return value
     
     def create(self, validated_data):
         services_data = validated_data.pop('services', None)
