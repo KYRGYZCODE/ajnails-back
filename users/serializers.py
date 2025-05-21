@@ -31,6 +31,15 @@ class UserSerializer(serializers.ModelSerializer):
             representation['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
         return representation
 
+    def update(self, instance, validated_data):
+        if 'avatar' in validated_data and validated_data['avatar'] is None:
+            if instance.avatar:
+                instance.avatar.delete(save=False)
+            instance.avatar = None
+
+        return super().update(instance, validated_data)
+
+
 class UserGet(serializers.ModelSerializer):
     class Meta:
         model = User
