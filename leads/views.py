@@ -1208,8 +1208,8 @@ class ClientStatsView(APIView):
                 return Response({"error": "Неверный тип периода. Используйте 'day', 'week' или 'month'."},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-            start_datetime = datetime.combine(start_date, datetime.min.time())
-            end_datetime = datetime.combine(end_date, datetime.max.time())
+            start_datetime = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
+            end_datetime = timezone.make_aware(datetime.combine(end_date, datetime.max.time()))
 
             leads_in_period = Lead.objects.filter(
                 is_confirmed=True,
