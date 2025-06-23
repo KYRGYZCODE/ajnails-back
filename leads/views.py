@@ -33,9 +33,15 @@ class ClientViewSet(viewsets.ModelViewSet):
 
 
 class ServiceViewSet(viewsets.ModelViewSet):
-    queryset = Service.objects.all()
+    queryset = Service.objects.filter(is_additional=False)
     serializer_class = ServiceSerializer
     permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        include_additional = self.request.query_params.get("include_additional")
+        if include_additional:
+            return Service.objects.all()
+        return Service.objects.filter(is_additional=False)
 
 
 class LeadViewSet(viewsets.ModelViewSet):
@@ -508,7 +514,7 @@ class ServiceAvailableSlotsView(APIView):
             slot_duration = 30
             slot_time = datetime.combine(input_date, earliest_start)
             day_end = datetime.combine(input_date, latest_end)
-            service_duration = timedelta(minutes=service.duration)
+            service_duration = timedelta(minutes=services.duration)
             
             while slot_time + service_duration <= day_end:
                 all_slots.append(slot_time)
@@ -658,11 +664,10 @@ class ServiceMastersWithSlotsView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
                 
-            masters = User.objects.filter(
-                is_active=True,
-                is_employee=True,
-                services__id=service_id
-            )
+            masters = User.objects.filter(is_active=True, is_employee=True)
+            for sid in service_ids:
+                masters = masters.filter(services__id=sid)
+            masters = masters.distinct()
             
             if not masters.exists():
                 return Response(
@@ -799,10 +804,10 @@ class AvailableDatesView(APIView):
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
-                'service_id', 
+                'service_ids', 
                 openapi.IN_QUERY, 
                 description="ID of the selected service",
-                type=openapi.TYPE_INTEGER,
+                type=openapi.TYPE_STRING,
                 required=True
             ),
             openapi.Parameter(

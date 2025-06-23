@@ -10,11 +10,18 @@ from .models import Service, Lead, Client
 from users.serializers import UserGet
 
 
-class ServiceSerializer(serializers.ModelSerializer):
+class ServiceBaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
         fields = '__all__'
 
+
+class ServiceSerializer(serializers.ModelSerializer):
+    additional_services = ServiceBaseSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Service
+        fields = '__all__'
 
 class ClientSerializer(serializers.ModelSerializer):
     class Meta:

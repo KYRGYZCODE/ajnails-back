@@ -91,6 +91,8 @@ class EmployeeListView(ListAPIView):
                                     available_master_ids.append(master.uuid)
                     
                     queryset = queryset.filter(uuid__in=available_master_ids)
+                except:
+                    pass
                     
             except ValueError:
                 return Response(
