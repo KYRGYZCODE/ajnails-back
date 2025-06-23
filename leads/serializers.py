@@ -24,12 +24,14 @@ class ClientSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['visits_count'] = Lead.objects.filter(client=instance).count()
-        representation['total_sum'] = Lead.objects.aggregate(total=Sum(F('service__price')))['total'] or 0
+        representation['total_sum'] = Lead.objects.aggregate(total=Sum(F('services__price')))['total'] or 0
  
         return representation
 
 
 class LeadSerializer(serializers.ModelSerializer):
+    services = serializers.PrimaryKeyRelatedField(queryset=Service.objects.all(), many=True)
+
     class Meta:
         model = Lead
         fields = '__all__'
@@ -37,7 +39,7 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        representation['service'] = ServiceSerializer(instance.service).data
+        representation['services'] = ServiceSerializer(instance.services.all(), many=True).data
         representation['master'] = UserGet(instance.master).data
         representation['client'] = ClientSerializer(instance.client).data if instance.client else None
         date_field = instance.date if instance.date else instance.date_time
@@ -47,10 +49,10 @@ class LeadSerializer(serializers.ModelSerializer):
     def validate(self, data):
         date_time = data.get('date_time')
         master = data.get('master')
-        service = data.get('service')
+        services = data.get('services') or (self.instance.services.all() if self.instance else [])
         date = data.get('date')
-        
-        if service and service.is_long:
+
+        if any(s.is_long for s in services):
             if not date and not date_time:
                 raise serializers.ValidationError("Для сложной услуги необходимо указать хотя бы дату")
             
@@ -70,6 +72,8 @@ class LeadSerializer(serializers.ModelSerializer):
                 
                 return data
         
+        total_duration = sum(s.duration for s in services)
+
         if not date_time or not master:
             return data
         
@@ -95,11 +99,10 @@ class LeadSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(f"Время записи {appointment_time} вне рабочего графика мастера "
                                              f"({start_time} - {end_time}) на {date_time.strftime('%A')}")
         
-        if service:
-            service_end_time = (date_time + timedelta(minutes=service.duration)).time()
+        if total_duration:
+            service_end_time = (date_time + timedelta(minutes=total_duration)).time()
             if service_end_time > end_time:
-                raise serializers.ValidationError(f"Услуга {service.name} (длительность {service.duration} мин) "
-                                                f"не вместится в рабочее время мастера до {end_time}")
+                raise serializers.ValidationError("Услуги не помещаются в рабочее время мастера")
                                                 
         if 'id' in self.context.get('view', {}).kwargs if self.context.get('view') else {}:
             lead_id = self.context.get('view').kwargs['id']
@@ -118,13 +121,14 @@ class LeadSerializer(serializers.ModelSerializer):
         POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
         
         for existing_lead in same_day_appointments:
-            if existing_lead.service:
-                existing_service_duration = timedelta(minutes=existing_lead.service.duration)
+            if existing_lead.services.exists():
+                existing_duration = sum(s.duration for s in existing_lead.services.all())
+                existing_service_duration = timedelta(minutes=existing_duration)
                 
                 busy_start = existing_lead.date_time - PRE_APPOINTMENT_BUFFER
                 busy_end = existing_lead.date_time + existing_service_duration + POST_APPOINTMENT_BUFFER
                 
-                new_end = date_time + timedelta(minutes=service.duration if service else 0)
+                new_end = date_time + timedelta(minutes=total_duration)
                 
                 if (date_time < busy_end and new_end > busy_start):
                     raise serializers.ValidationError(
@@ -135,34 +139,32 @@ class LeadSerializer(serializers.ModelSerializer):
         return data
     
     def create(self, validated_data):
-        if validated_data.get('service') and validated_data.get('service').is_long:
-            if not validated_data.get('date') and validated_data.get('date_time'):
-                validated_data['date'] = validated_data['date_time'].date()
-                
-        lead = super().create(validated_data)
+        services = validated_data.pop('services', [])
+        lead = Lead.objects.create(**validated_data)
+        if services:
+            lead.services.set(services)
 
         client_name = lead.client.name if lead.client else lead.client_name or "Без имени"
         phone = lead.phone or "—"
-        service_name = lead.service.name if lead.service else "Без услуги"
-        service_duration = lead.service.duration if lead.service else "—"
+        service_names = ", ".join(s.name for s in lead.services.all())
         master_name = lead.master.first_name or lead.master.email
-        
-        is_long_service = lead.service and lead.service.is_long
-        
+
+        is_long_service = any(s.is_long for s in lead.services.all())
+
         if is_long_service and not lead.date_time:
             date_str = lead.date.strftime("%d.%m.%Y") if lead.date else "Дата не указана"
             date_info = f"Дата: *{date_str}* (Менеджер перезвонит для уточнения времени)"
         else:
             date_str = lead.date_time.strftime("%d.%m.%Y %H:%M") if lead.date_time else "Время не указано"
             date_info = f"Дата и время: *{date_str}*"
-        
+
         reminder_text = dict(Lead.REMINDER_CHOICES).get(lead.reminder_minutes, "За 1 час")
 
         message = (
             f"📥 *Новая запись!*\n"
             f"👤 Клиент: *{client_name}*\n"
             f"📞 Телефон: `{phone}`\n"
-            f"🛠 Услуга: *{service_name}* ({service_duration} мин)\n"
+            f"🛠 Услуги: *{service_names}*\n"
             f"🧑‍🔧 Мастер: *{master_name}*\n"
             f"🕒 {date_info}\n"
             f"⏰ Напоминание: *{reminder_text}*\n"

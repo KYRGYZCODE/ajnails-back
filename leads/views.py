@@ -273,7 +273,10 @@ class LeadViewSet(viewsets.ModelViewSet):
                 properties={
                     'date': openapi.Schema(type=openapi.TYPE_STRING),
                     'master_id': openapi.Schema(type=openapi.TYPE_STRING),
-                    'service_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'service_ids': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_INTEGER)
+                    ),
                     'available_slots': openapi.Schema(
                         type=openapi.TYPE_ARRAY, 
                         items=openapi.Items(type=openapi.TYPE_STRING)
@@ -371,13 +374,14 @@ class LeadViewSet(viewsets.ModelViewSet):
             
             busy_periods = []
             for lead in busy_leads:
-                if lead.service:
+                if lead.services.exists():
+                    duration = sum(s.duration for s in lead.services.all())
                     busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER
-                    busy_end = lead.date_time + timedelta(minutes=lead.service.duration) + POST_APPOINTMENT_BUFFER
+                    busy_end = lead.date_time + timedelta(minutes=duration) + POST_APPOINTMENT_BUFFER
 
                     busy_start = make_aware(busy_start)
                     busy_end = make_aware(busy_end)
-                    
+
                     busy_periods.append((busy_start, busy_end))
             
             available_slots = []
@@ -412,10 +416,10 @@ class ServiceAvailableSlotsView(APIView):
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
-                'service_id', 
-                openapi.IN_QUERY, 
-                description="ID of the selected service",
-                type=openapi.TYPE_INTEGER,
+                'service_ids',
+                openapi.IN_QUERY,
+                description="Comma separated IDs of selected services",
+                type=openapi.TYPE_STRING,
                 required=True
             ),
             openapi.Parameter(
@@ -431,7 +435,10 @@ class ServiceAvailableSlotsView(APIView):
                 type=openapi.TYPE_OBJECT,
                 properties={
                     'date': openapi.Schema(type=openapi.TYPE_STRING),
-                    'service_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'service_ids': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_INTEGER)
+                    ),
                     'available_slots': openapi.Schema(
                         type=openapi.TYPE_ARRAY, 
                         items=openapi.Items(type=openapi.TYPE_STRING)
@@ -443,22 +450,23 @@ class ServiceAvailableSlotsView(APIView):
         }
     )
     def get(self, request):
-        service_id = request.query_params.get('service_id')
+        service_ids_param = request.query_params.get('service_ids')
         date_str = request.query_params.get('date')
-        
-        if not all([service_id, date_str]):
+
+        if not all([service_ids_param, date_str]):
             return Response(
-                {"error": "service_id and date are required parameters"},
+                {"error": "service_ids and date are required parameters"},
                 status=400
             )
-        
+
         try:
-            service = Service.objects.get(id=service_id)
-        except Service.DoesNotExist:
-            return Response(
-                {"error": "Service not found"},
-                status=404
-            )
+            service_ids = [int(s) for s in service_ids_param.split(',') if s]
+        except ValueError:
+            return Response({"error": "Invalid service_ids"}, status=400)
+
+        services = Service.objects.filter(id__in=service_ids)
+        if not services.exists():
+            return Response({"error": "Service not found"}, status=404)
             
         try:
             input_date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -470,11 +478,9 @@ class ServiceAvailableSlotsView(APIView):
                     status=400
                 )
                 
-            masters = User.objects.filter(
-                is_active=True,
-                is_employee=True,
-                services__id=service_id
-            )
+            masters = User.objects.filter(is_active=True, is_employee=True)
+            for sid in service_ids:
+                masters = masters.filter(services__id=sid)
             
             if not masters.exists():
                 return Response(
@@ -518,13 +524,14 @@ class ServiceAvailableSlotsView(APIView):
             
             busy_periods = []
             for lead in leads:
-                if lead.service:
+                if lead.services.exists():
+                    duration = sum(s.duration for s in lead.services.all())
                     busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER
-                    busy_end = lead.date_time + timedelta(minutes=lead.service.duration) + POST_APPOINTMENT_BUFFER
-                    
+                    busy_end = lead.date_time + timedelta(minutes=duration) + POST_APPOINTMENT_BUFFER
+
                     busy_start = make_aware(busy_start) if not busy_start.tzinfo else busy_start
                     busy_end = make_aware(busy_end) if not busy_end.tzinfo else busy_end
-                    
+
                     busy_periods.append((busy_start, busy_end))
             
             available_slots = []
@@ -561,7 +568,7 @@ class ServiceAvailableSlotsView(APIView):
             
             return Response({
                 'date': date_str,
-                'service_id': service_id,
+                'service_ids': service_ids,
                 'available_slots': sorted(list(set(available_slots)))
             })
             
@@ -575,10 +582,10 @@ class ServiceMastersWithSlotsView(APIView):
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
-                'service_id', 
-                openapi.IN_QUERY, 
-                description="ID of the selected service",
-                type=openapi.TYPE_INTEGER,
+                'service_ids',
+                openapi.IN_QUERY,
+                description="Comma separated IDs of selected services",
+                type=openapi.TYPE_STRING,
                 required=True
             ),
             openapi.Parameter(
@@ -594,7 +601,10 @@ class ServiceMastersWithSlotsView(APIView):
                 type=openapi.TYPE_OBJECT,
                 properties={
                     'date': openapi.Schema(type=openapi.TYPE_STRING),
-                    'service_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'service_ids': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_INTEGER)
+                    ),
                     'is_long_service': openapi.Schema(type=openapi.TYPE_BOOLEAN),
                     'masters': openapi.Schema(
                         type=openapi.TYPE_ARRAY, 
@@ -618,22 +628,23 @@ class ServiceMastersWithSlotsView(APIView):
         }
     )
     def get(self, request):
-        service_id = request.query_params.get('service_id')
+        service_ids_param = request.query_params.get('service_ids')
         date_str = request.query_params.get('date')
-        
-        if not all([service_id, date_str]):
+
+        if not all([service_ids_param, date_str]):
             return Response(
-                {"error": "service_id and date are required parameters"},
+                {"error": "service_ids and date are required parameters"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
-            service = Service.objects.get(id=service_id)
-        except Service.DoesNotExist:
-            return Response(
-                {"error": "Service not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            service_ids = [int(s) for s in service_ids_param.split(',') if s]
+        except ValueError:
+            return Response({"error": "Invalid service_ids"}, status=status.HTTP_400_BAD_REQUEST)
+
+        services = Service.objects.filter(id__in=service_ids)
+        if not services.exists():
+            return Response({"error": "Services not found"}, status=status.HTTP_404_NOT_FOUND)
             
         try:
             current_datetime = timezone.now()
@@ -672,7 +683,10 @@ class ServiceMastersWithSlotsView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            if service.is_long:
+            total_duration = sum(s.duration for s in services)
+            is_long = any(s.is_long for s in services)
+
+            if is_long:
                 result_masters = []
                 for master in masters:
                     master_schedule = master_schedules.filter(employee=master).first()
@@ -687,7 +701,7 @@ class ServiceMastersWithSlotsView(APIView):
                 
                 return Response({
                     'date': date_str,
-                    'service_id': service_id,
+                    'service_ids': service_ids,
                     'is_long_service': True,
                     'masters': result_masters
                 })
@@ -699,7 +713,7 @@ class ServiceMastersWithSlotsView(APIView):
 
             PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)
             POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
-            service_duration = timedelta(minutes=service.duration)
+            service_duration = timedelta(minutes=total_duration)
             slot_duration = 30
             booking_buffer = timedelta(minutes=30)
             
@@ -734,9 +748,10 @@ class ServiceMastersWithSlotsView(APIView):
                 busy_periods = []
                 
                 for lead in master_leads:
-                    if lead.service:
+                    if lead.services.exists():
+                        duration = sum(s.duration for s in lead.services.all())
                         busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER
-                        busy_end = lead.date_time + timedelta(minutes=lead.service.duration) + POST_APPOINTMENT_BUFFER
+                        busy_end = lead.date_time + timedelta(minutes=duration) + POST_APPOINTMENT_BUFFER
                         
                         if not busy_start.tzinfo:
                             busy_start = timezone.make_aware(busy_start)
@@ -769,7 +784,7 @@ class ServiceMastersWithSlotsView(APIView):
             
             return Response({
                 'date': date_str,
-                'service_id': service_id,
+                'service_ids': service_ids,
                 'is_long_service': False,
                 'masters': result_masters
             })
@@ -810,7 +825,10 @@ class AvailableDatesView(APIView):
                 type=openapi.TYPE_OBJECT,
                 properties={
                     'month': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'service_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'service_ids': openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_INTEGER)
+                    ),
                     'available_dates': openapi.Schema(
                         type=openapi.TYPE_ARRAY,
                         items=openapi.Schema(type=openapi.TYPE_STRING)
@@ -822,23 +840,23 @@ class AvailableDatesView(APIView):
         }
     )
     def get(self, request):
-        service_id = request.query_params.get('service_id')
+        service_ids_param = request.query_params.get('service_ids')
         month = request.query_params.get('month')
         year = request.query_params.get('year')
-        
-        if not all([service_id, month, year]):
+
+        if not all([service_ids_param, month, year]):
             return Response(
-                {"error": "service_id, month and year are required parameters"},
+                {"error": "service_ids, month and year are required parameters"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
-            service_id = int(service_id)
+            service_ids = [int(s) for s in service_ids_param.split(',') if s]
             month = int(month)
             year = int(year)
         except ValueError:
             return Response(
-                {"error": "service_id, month and year must be integers"},
+                {"error": "service_ids, month and year must be integers"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -848,13 +866,9 @@ class AvailableDatesView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        try:
-            service = Service.objects.get(id=service_id)
-        except Service.DoesNotExist:
-            return Response(
-                {"error": "Service not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        services = Service.objects.filter(id__in=service_ids)
+        if not services.exists():
+            return Response({"error": "Services not found"}, status=status.HTTP_404_NOT_FOUND)
         
         current_date = datetime.now().date()
         
@@ -865,11 +879,9 @@ class AvailableDatesView(APIView):
         else:
             last_day = date(year, month + 1, 1) - timedelta(days=1)
         
-        masters = User.objects.filter(
-            is_active=True,
-            is_employee=True,
-            services__id=service_id
-        )
+        masters = User.objects.filter(is_active=True, is_employee=True)
+        for sid in service_ids:
+            masters = masters.filter(services__id=sid)
         
         if not masters.exists():
             return Response(
@@ -889,7 +901,7 @@ class AvailableDatesView(APIView):
             )
             
             if master_schedules.exists():
-                if service.is_long:
+                if any(s.is_long for s in services):
                     available_dates.append(current_day.strftime('%Y-%m-%d'))
                 else:
                     leads = Lead.objects.filter(
@@ -899,7 +911,7 @@ class AvailableDatesView(APIView):
                     
                     PRE_APPOINTMENT_BUFFER = timedelta(minutes=30)
                     POST_APPOINTMENT_BUFFER = timedelta(minutes=10)
-                    service_duration = timedelta(minutes=service.duration)
+                    service_duration = timedelta(minutes=sum(s.duration for s in services))
                     slot_duration = 30
                     
                     date_has_slots = False
@@ -921,13 +933,14 @@ class AvailableDatesView(APIView):
                         busy_periods = []
                         
                         for lead in master_leads:
-                            if lead.service:
+                            if lead.services.exists():
+                                duration = sum(s.duration for s in lead.services.all())
                                 busy_start = lead.date_time - PRE_APPOINTMENT_BUFFER
-                                busy_end = lead.date_time + timedelta(minutes=lead.service.duration) + POST_APPOINTMENT_BUFFER
-                                
+                                busy_end = lead.date_time + timedelta(minutes=duration) + POST_APPOINTMENT_BUFFER
+
                                 busy_start = make_aware(busy_start) if not busy_start.tzinfo else busy_start
                                 busy_end = make_aware(busy_end) if not busy_end.tzinfo else busy_end
-                                
+
                                 busy_periods.append((busy_start, busy_end))
                         
                         for slot in all_slots:
@@ -955,7 +968,7 @@ class AvailableDatesView(APIView):
         return Response({
             'month': month,
             'year': year,
-            'service_id': service_id,
+            'service_ids': service_ids,
             'available_dates': available_dates
         })
 
@@ -1131,10 +1144,9 @@ class FinancialReportView(APIView):
             date_time__lte=end_dt
         )
 
-        total = sum(
-            (lead.service.price for lead in leads),
-            Decimal('0.00')
-        )
+        total = Decimal('0.00')
+        for lead in leads:
+            total += sum((s.price for s in lead.services.all()), Decimal('0.00'))
         return total
 
 class ClientStatsView(APIView):

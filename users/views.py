@@ -26,18 +26,17 @@ class EmployeeListView(ListAPIView):
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     
     def get_queryset(self):
-        service_id = self.request.query_params.get('service_id')
+        service_ids_param = self.request.query_params.get('service_ids')
         date_str = self.request.query_params.get('date')
         time_str = self.request.query_params.get('time')
-        
-        if not service_id:
+
+        if not service_ids_param:
             return User.objects.none()
-            
-        queryset = User.objects.filter(
-            is_active=True, 
-            is_employee=True,
-            services__id=service_id
-        )
+
+        service_ids = [int(s) for s in service_ids_param.split(',') if s]
+        queryset = User.objects.filter(is_active=True, is_employee=True)
+        for sid in service_ids:
+            queryset = queryset.filter(services__id=sid)
             
         if date_str and time_str:
             try:
@@ -47,9 +46,10 @@ class EmployeeListView(ListAPIView):
                 date_time = make_aware(date_time)
                 
                 try:
-                    service = Service.objects.get(id=service_id)
-                    service_duration = timedelta(minutes=service.duration)
-                    
+                    services = Service.objects.filter(id__in=service_ids)
+                    total_duration = sum(s.duration for s in services)
+                    service_duration = timedelta(minutes=total_duration)
+                
                     appointment_end = date_time + service_duration
                     weekday = input_date.isoweekday()
                     
@@ -78,9 +78,10 @@ class EmployeeListView(ListAPIView):
                                 
                                 is_available = True
                                 for appt in existing_appointments:
-                                    if appt.service:
+                                    if appt.services.exists():
+                                        dur = sum(s.duration for s in appt.services.all())
                                         busy_start = make_aware(appt.date_time - PRE_APPOINTMENT_BUFFER)
-                                        busy_end = make_aware(appt.date_time + timedelta(minutes=appt.service.duration) + POST_APPOINTMENT_BUFFER)
+                                        busy_end = make_aware(appt.date_time + timedelta(minutes=dur) + POST_APPOINTMENT_BUFFER)
 
                                         if (date_time < busy_end and appointment_end > busy_start):
                                             is_available = False
@@ -90,9 +91,6 @@ class EmployeeListView(ListAPIView):
                                     available_master_ids.append(master.uuid)
                     
                     queryset = queryset.filter(uuid__in=available_master_ids)
-                    
-                except Service.DoesNotExist:
-                    return User.objects.none()
                     
             except ValueError:
                 return Response(
@@ -104,10 +102,10 @@ class EmployeeListView(ListAPIView):
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
-                'service_id',
+                'service_ids',
                 openapi.IN_QUERY,
-                description="ID of the selected service (required)",
-                type=openapi.TYPE_INTEGER,
+                description="Comma separated IDs of selected services",
+                type=openapi.TYPE_STRING,
                 required=True
             ),
             openapi.Parameter(
@@ -278,9 +276,8 @@ class MasterSummaryView(APIView):
             total_clients = leads.values('client').distinct().count()
             
             total_earnings = 0
-            for lead in leads.select_related('service'):
-                if lead.service:
-                    total_earnings += float(lead.service.price)
+            for lead in leads.prefetch_related('services'):
+                total_earnings += float(sum(s.price for s in lead.services.all()))
             
             result.append({
                 'uuid': str(master.uuid),
