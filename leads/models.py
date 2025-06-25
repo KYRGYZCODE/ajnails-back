@@ -55,6 +55,7 @@ class Lead(models.Model):
     master = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name="leads")
     date_time = models.DateTimeField(null=True, blank=True)
     prepayment = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    payment_url = models.URLField(verbose_name="Ссылка на оплату", blank=True, null=True)
     is_confirmed = models.BooleanField(default=None, null=True, blank=True)
     date = models.DateField(null=True, blank=True)
     reminder_minutes = models.IntegerField(choices=REMINDER_CHOICES, default=60, verbose_name="Время напоминания")
