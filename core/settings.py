@@ -170,3 +170,9 @@ LOGGING = {
         },
     },
 }
+
+FREEDOMPAY_MERCHANT_ID = '560458'
+FREEDOMPAY_SECRET_KEY = 'nvfKVRhgfS97L5TO'
+FREEDOMPAY_RESULT_URL = 'https://<твой-домен>/webhook'
+FREEDOMPAY_SUCCESS_URL = 'https://<твой-домен>/success'
+FREEDOMPAY_FAILURE_URL = 'https://<твой-домен>/failure'
