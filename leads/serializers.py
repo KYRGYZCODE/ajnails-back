@@ -179,6 +179,12 @@ class LeadSerializer(serializers.ModelSerializer):
 
         asyncio.run(send_order_message(message))
 
+        try:
+            from leads.payment import create_payment_for_lead
+            create_payment_for_lead(lead)
+        except Exception as e:
+            print(f"Failed to create payment for lead {lead.pk}: {e}")
+
         return lead
 
 
