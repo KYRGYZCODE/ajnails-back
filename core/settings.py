@@ -25,6 +25,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_yasg',
     'django_filters',
+    'celery',
+    'redis',
 
     'users',
     'leads',
@@ -176,3 +178,9 @@ FREEDOMPAY_SECRET_KEY = 'nvfKVRhgfS97L5TO'
 FREEDOMPAY_RESULT_URL = 'https://<твой-домен>/webhook'
 FREEDOMPAY_SUCCESS_URL = 'https://<твой-домен>/success'
 FREEDOMPAY_FAILURE_URL = 'https://<твой-домен>/failure'
+
+REDIS_HOST = config('REDIS_HOST')
+REDIS_PORT = config('REDIS_PORT')
+REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL

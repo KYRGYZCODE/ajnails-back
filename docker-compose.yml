@@ -7,6 +7,12 @@ services:
       - .env
     volumes:
       - db:/var/lib/postgresql/data
+  
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "900", "1", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
 
   api:
     build: 
@@ -20,8 +26,23 @@ services:
     ports:
       - "8090:8000"
     command: gunicorn --bind 0.0.0.0:8000 core.wsgi:application
+  
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./static:/app/static
+      - ./media:/app/media
+    depends_on:
+      - db
+      - redis
+    command: celery -A core worker --loglevel=info
 
 volumes:
   static_volume:
   media_volume:
   db:
+  redis_data:

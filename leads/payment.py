@@ -8,9 +8,12 @@ from .models import Lead
 
 INIT_URL = 'https://api.freedompay.kg/init_payment.php'
 SCRIPT_NAME = 'init_payment.php'
+
+STATUS_URL    = 'https://api.freedompay.kg/get_status3.php'
+SCRIPT_STATUS = 'get_status3.php'
+
 MERCHANT_ID = settings.FREEDOMPAY_MERCHANT_ID
 SECRET_KEY = settings.FREEDOMPAY_SECRET_KEY
-
 
 def _make_signature(params: dict) -> str:
     string_parts = [SCRIPT_NAME]
@@ -24,7 +27,7 @@ def _make_signature(params: dict) -> str:
 def create_payment_for_lead(lead: Lead) -> str:
     """Create payment via FreedomPay and return redirect url."""
     try:
-        total_amount = sum((s.price for s in lead.services.all()), 0)
+        total_amount = 500
         params = {
             'pg_merchant_id': MERCHANT_ID,
             'pg_order_id': lead.pk,

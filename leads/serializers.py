@@ -4,6 +4,7 @@ from rest_framework import serializers
 from django.utils import timezone
 from django.db.models import Sum, F
 
+from leads.tasks import check_payment_status
 from users.models import EmployeeSchedule
 from users.utils import send_order_message
 from .models import Service, Lead, Client
@@ -182,6 +183,7 @@ class LeadSerializer(serializers.ModelSerializer):
         try:
             from leads.payment import create_payment_for_lead
             create_payment_for_lead(lead)
+            check_payment_status.apply_async(args=[lead.pk], countdown=15)
         except Exception as e:
             print(f"Failed to create payment for lead {lead.pk}: {e}")
 
