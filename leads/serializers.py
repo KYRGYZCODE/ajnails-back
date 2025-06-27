@@ -24,6 +24,24 @@ class ServiceSerializer(serializers.ModelSerializer):
         model = Service
         fields = '__all__'
 
+    def validate(self, attrs):
+        instance = self.instance
+        parent_service = attrs.get("parent_service")
+        if instance and parent_service is None:
+            parent_service = instance.parent_service
+
+        if parent_service and instance:
+            if parent_service == instance:
+                raise serializers.ValidationError({"parent_service": "Услуга не может быть родителем сама себе."})
+
+            current = parent_service
+            while current:
+                if current == instance:
+                    raise serializers.ValidationError({"parent_service": "Циклическая связь между услугами недопустима."})
+                current = current.parent_service
+
+        return attrs
+
 class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client

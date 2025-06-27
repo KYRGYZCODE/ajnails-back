@@ -33,15 +33,16 @@ class ClientViewSet(viewsets.ModelViewSet):
 
 
 class ServiceViewSet(viewsets.ModelViewSet):
-    queryset = Service.objects.filter(is_additional=False)
     serializer_class = ServiceSerializer
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        include_additional = self.request.query_params.get("include_additional")
-        if include_additional:
-            return Service.objects.all()
-        return Service.objects.filter(is_additional=False)
+        queryset = Service.objects.all()
+        if self.action == "list":
+            include_additional = self.request.query_params.get("include_additional")
+            if not include_additional:
+                queryset = queryset.filter(is_additional=False)
+        return queryset
 
 
 class LeadViewSet(viewsets.ModelViewSet):
