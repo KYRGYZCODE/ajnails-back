@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+from rest_framework.filters import SearchFilter
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.utils.timezone import now
@@ -35,6 +36,9 @@ class ClientViewSet(viewsets.ModelViewSet):
 class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.AllowAny]
+
+    filter_backends = (SearchFilter,)
+    search_fields = ('name', )
 
     def get_queryset(self):
         queryset = Service.objects.all()
