@@ -53,6 +53,7 @@ def check_payment_status(self, lead_pk: int):
     status = root.findtext('pg_payment_status')
     if status in ('success', 'ok'):
         lead.prepayment_paid = True
+        lead.is_confirmed = True
         lead.save(update_fields=['prepayment_paid'])
     elif status in ('failed', 'error'):
         pass
