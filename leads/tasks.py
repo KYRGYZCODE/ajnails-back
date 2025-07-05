@@ -54,7 +54,7 @@ def check_payment_status(self, lead_pk: int):
     if status in ('success', 'ok'):
         lead.prepayment_paid = True
         lead.is_confirmed = True
-        lead.save(update_fields=['prepayment_paid'])
+        lead.save(update_fields=['prepayment_paid', 'if_confirmed'])
     elif status in ('failed', 'error'):
         pass
     else:
