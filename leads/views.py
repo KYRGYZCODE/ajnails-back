@@ -150,7 +150,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                 day_leads_query = Lead.objects.filter(date_time__date=current_day)
                 
                 if master_id:
-                    day_leads_query = day_leads_query.filter(master__uuid=master_id)
+                    day_leads_query = day_leads_query.filter(master_uuid=master_id)
                     
                 if service_id:
                     day_leads_query = day_leads_query.filter(service__id=service_id)
