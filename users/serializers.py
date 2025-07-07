@@ -4,6 +4,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import WEEKDAY_RUSSIAN, User, EmployeeSchedule
+from leads.models import Service
 
 class UserSerializer(serializers.ModelSerializer):
     services = serializers.PrimaryKeyRelatedField(
