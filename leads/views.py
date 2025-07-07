@@ -148,12 +148,12 @@ class LeadViewSet(viewsets.ModelViewSet):
             for i in range(7):
                 current_day = monday + timedelta(days=i)
                 
-                day_leads_query = Lead.objects.filter(date_time__date=current_day)
+                qs = Lead.objects.filter(date_time__date=current_day)
                 
                 if master_id:
                     try:
                         uuid = UUID(master_id)
-                        qs = day_leads_query.filter(master__uuid=uuid)
+                        qs = qs.filter(master__uuid=uuid)
                     except ValueError:
                         qs = Lead.objects.none()
 
