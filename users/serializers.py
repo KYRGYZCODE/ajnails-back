@@ -2,6 +2,7 @@ import json
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.http import QueryDict
 
 from .models import WEEKDAY_RUSSIAN, User, EmployeeSchedule
 from leads.models import Service
