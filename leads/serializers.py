@@ -23,6 +23,14 @@ class ServiceSerializer(serializers.ModelSerializer):
         model = Service
         fields = '__all__'
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if instance.parent_service:
+            representation['parent_service'] = ServiceBaseSerializer(instance.parent_service).data
+        else:
+            representation['parent_service'] = None
+        return representation
+
     def validate(self, attrs):
         instance = self.instance
         parent_service = attrs.get("parent_service")
