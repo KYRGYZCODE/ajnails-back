@@ -160,7 +160,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                 if service_id:
                     qs = qs.filter(services__id=service_id)
                 
-                serialized_leads = LeadSerializer(day_leads_query, many=True).data
+                serialized_leads = LeadSerializer(qs, many=True).data
                 
                 day_data = {
                     'date': current_day.strftime('%Y-%m-%d'),
