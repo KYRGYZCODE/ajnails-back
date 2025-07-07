@@ -19,6 +19,7 @@ class ServiceBaseSerializer(serializers.ModelSerializer):
 
 class ServiceSerializer(serializers.ModelSerializer):
     additional_services = ServiceBaseSerializer(many=True, read_only=True)
+    parent_service = ServiceBaseSerializer(read_only=True)
 
     class Meta:
         model = Service
