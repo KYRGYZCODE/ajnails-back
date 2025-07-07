@@ -6,6 +6,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import WEEKDAY_RUSSIAN, User, EmployeeSchedule
 
 class UserSerializer(serializers.ModelSerializer):
+    services = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Service.objects.all(), required=False, write_only=True
+    )
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
@@ -14,22 +17,25 @@ class UserSerializer(serializers.ModelSerializer):
         exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser', 'last_login')
 
     def to_internal_value(self, data):
-        data = data.copy()
-        services = data.get('services')
+        # если пришёл multipart/form-data — это QueryDict
+        if isinstance(data, QueryDict):
+            data = data.copy()
 
-        if isinstance(services, str):
-            try:
-                if services.startswith('[') and services.endswith(']'):
-                    data['services'] = [int(s) for s in json.loads(services)]
+            raw = data.get('services')
+            if raw is not None:
+                # 1) JSON-строка: "[14,15,16]"
+                if raw.startswith('[') and raw.endswith(']'):
+                    try:
+                        lst = json.loads(raw)
+                        data.setlist('services', [str(x) for x in lst])
+                    except json.JSONDecodeError:
+                        pass
+                # 2) CSV-строка: "14,15,16"
+                elif ',' in raw:
+                    data.setlist('services', [x for x in raw.split(',') if x])
+                # 3) повторяющиеся поля: services=14&services=15…
                 else:
-                    data['services'] = [int(s) for s in services.split(',') if s]
-            except (ValueError, TypeError, json.JSONDecodeError):
-                raise serializers.ValidationError({'services': 'Неверный формат списка услуг'})
-        elif isinstance(services, list):
-            try:
-                data['services'] = [int(s) for s in services]
-            except (ValueError, TypeError):
-                raise serializers.ValidationError({'services': 'Неверный формат списка услуг'})
+                    data.setlist('services', data.getlist('services'))
 
         return super().to_internal_value(data)
     
