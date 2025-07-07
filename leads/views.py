@@ -126,7 +126,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def weekly_leads(self, request):
         date_str = request.query_params.get('date')
-        master_id = request.query_params.get('master_id')
+        master_uuid = request.query_params.get('master_uuid')
         service_id = request.query_params.get('service_id')
         
         try:
@@ -150,9 +150,9 @@ class LeadViewSet(viewsets.ModelViewSet):
                 
                 qs = Lead.objects.filter(date_time__date=current_day)
                 
-                if master_id:
+                if master_uuid:
                     try:
-                        uuid = UUID(master_id)
+                        uuid = UUID(master_uuid)
                         qs = qs.filter(master__uuid=uuid)
                     except ValueError:
                         qs = Lead.objects.none()
