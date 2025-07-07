@@ -16,11 +16,21 @@ class UserSerializer(serializers.ModelSerializer):
     def to_internal_value(self, data):
         data = data.copy()
         services = data.get('services')
+
         if isinstance(services, str):
             try:
-                data['services'] = [int(s) for s in services.split(',') if s]
-            except ValueError:
+                if services.startswith('[') and services.endswith(']'):
+                    data['services'] = [int(s) for s in json.loads(services)]
+                else:
+                    data['services'] = [int(s) for s in services.split(',') if s]
+            except (ValueError, TypeError, json.JSONDecodeError):
                 raise serializers.ValidationError({'services': 'Неверный формат списка услуг'})
+        elif isinstance(services, list):
+            try:
+                data['services'] = [int(s) for s in services]
+            except (ValueError, TypeError):
+                raise serializers.ValidationError({'services': 'Неверный формат списка услуг'})
+
         return super().to_internal_value(data)
     
     def validate_email(self, value):
