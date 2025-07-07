@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from uuid import UUID
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import viewsets, permissions, status
@@ -150,10 +151,14 @@ class LeadViewSet(viewsets.ModelViewSet):
                 day_leads_query = Lead.objects.filter(date_time__date=current_day)
                 
                 if master_id:
-                    day_leads_query = day_leads_query.filter(master_uuid=master_id)
-                    
+                    try:
+                        uuid = UUID(master_id)
+                        qs = day_leads_query.filter(master__uuid=uuid)
+                    except ValueError:
+                        qs = Lead.objects.none()
+
                 if service_id:
-                    day_leads_query = day_leads_query.filter(service__id=service_id)
+                    qs = qs.filter(services__id=service_id)
                 
                 serialized_leads = LeadSerializer(day_leads_query, many=True).data
                 
