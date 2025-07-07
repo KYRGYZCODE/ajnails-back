@@ -12,6 +12,16 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser', 'last_login')
+
+    def to_internal_value(self, data):
+        data = data.copy()
+        services = data.get('services')
+        if isinstance(services, str):
+            try:
+                data['services'] = [int(s) for s in services.split(',') if s]
+            except ValueError:
+                raise serializers.ValidationError({'services': 'Неверный формат списка услуг'})
+        return super().to_internal_value(data)
     
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -166,14 +176,21 @@ class EmployeeScheduleUpdateSerializer(serializers.ModelSerializer):
     def to_internal_value(self, data):
         data = data.copy()
         json_fields = ['schedules', 'delete_schedules', 'update_schedules']
-        
+
         for key in json_fields:
             if key in data and isinstance(data[key], str):
                 try:
                     data[key] = json.loads(data[key])
                 except:
                     raise serializers.ValidationError({key: 'Неверный формат JSON'})
-        
+
+        services = data.get('services')
+        if isinstance(services, str):
+            try:
+                data['services'] = [int(s) for s in services.split(',') if s]
+            except ValueError:
+                raise serializers.ValidationError({'services': 'Неверный формат списка услуг'})
+
         return super().to_internal_value(data)
     
     def update(self, instance, validated_data):
