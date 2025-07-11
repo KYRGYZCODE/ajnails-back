@@ -7,68 +7,66 @@ from django.http import QueryDict
 from .models import WEEKDAY_RUSSIAN, User, EmployeeSchedule
 from leads.models import Service
 
-class CSVListField(serializers.ListField):
-    """
-    Принимает либо:
-      - форму "48,51,52" (str) -> split(',') -> ['48','51','52']
-      - повторяющиеся поля: ['48','51','52']
-    И дальше валидирует каждый элемент через child.
-    """
-    def to_internal_value(self, data):
-        # если получили строку, разбиваем по запятым
-        if isinstance(data, str):
-            data = [item.strip() for item in data.split(',') if item.strip()]
-        return super().to_internal_value(data)
-
-
 class UserSerializer(serializers.ModelSerializer):
-    services = CSVListField(
-        child=serializers.PrimaryKeyRelatedField(queryset=Service.objects.all()),
-        write_only=True,
-        required=False
+    services = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Service.objects.all(), required=False, write_only=True
     )
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        exclude = (
-            'groups', 'user_permissions',
-            'is_active', 'is_staff', 'is_superuser',
-            'last_login'
-        )
+        exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser', 'last_login')
 
+    def to_internal_value(self, data):
+        if isinstance(data, QueryDict):
+            data = data.copy()
+
+            raw = data.get('services')
+            if raw is not None:
+                if raw.startswith('[') and raw.endswith(']'):
+                    try:
+                        lst = json.loads(raw)
+                        data.setlist('services', [str(x) for x in lst])
+                    except json.JSONDecodeError:
+                        pass
+                elif ',' in raw:
+                    data.setlist('services', [x for x in raw.split(',') if x])
+                else:
+                    data.setlist('services', data.getlist('services'))
+
+        return super().to_internal_value(data)
+    
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Пользователь с таким email уже существует.")
         return value
-
+    
     def create(self, validated_data):
-        services = validated_data.pop('services', None)
+        services_data = validated_data.pop('services', None)
+
         user = User.objects.create_user(**validated_data)
-        if services is not None:
-            user.services.set(services)
+
+        if services_data:
+            user.services.set(services_data)
+
         return user
-
-    def update(self, instance, validated_data):
-        # удаляем старый аватар, если прислали avatar=null
-        if validated_data.get('avatar') is None and instance.avatar:
-            instance.avatar.delete(save=False)
-            instance.avatar = None
-
-        services = validated_data.pop('services', None)
-        instance = super().update(instance, validated_data)
-        if services is not None:
-            instance.services.set(services)
-        return instance
-
+    
     def to_representation(self, instance):
         from leads.serializers import ServiceSerializer
-        rep = super().to_representation(instance)
-        rep['services'] = ServiceSerializer(instance.services, many=True).data
+        representation = super().to_representation(instance)
+        representation["services"] = ServiceSerializer(instance.services, many=True).data
         if instance.schedule.exists():
-            rep['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
-        return rep
+            representation['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
+        return representation
+
+    def update(self, instance, validated_data):
+        if 'avatar' in validated_data and validated_data['avatar'] is None:
+            if instance.avatar:
+                instance.avatar.delete(save=False)
+            instance.avatar = None
+
+        return super().update(instance, validated_data)
 
 
 class UserGet(serializers.ModelSerializer):
@@ -190,46 +188,69 @@ class EmployeeScheduleUpdateSerializer(serializers.ModelSerializer):
         fields = '__all__'
     
     def to_internal_value(self, data):
-        data = data.copy()
-        json_fields = ['schedules', 'delete_schedules', 'update_schedules']
-
-        for key in json_fields:
-            if key in data and isinstance(data[key], str):
-                try:
-                    data[key] = json.loads(data[key])
-                except:
-                    raise serializers.ValidationError({key: 'Неверный формат JSON'})
+        if isinstance(data, QueryDict):
+            mutable = data.copy()
+            plain = {}
+            for key in mutable.keys():
+                vals = mutable.getlist(key)
+                if key == 'services':
+                    flat = []
+                    for v in vals:
+                        for part in v.split(','):
+                            part = part.strip()
+                            if part:
+                                flat.append(part)
+                    plain[key] = flat
+                else:
+                    plain[key] = vals if len(vals) > 1 else vals[0]
+            data = plain
 
         services = data.get('services')
         if isinstance(services, str):
             try:
-                data['services'] = [int(s) for s in services.split(',') if s]
+                data['services'] = [int(s) for s in services.split(',') if s.strip()]
             except ValueError:
                 raise serializers.ValidationError({'services': 'Неверный формат списка услуг'})
+        
+        for key in ('schedules', 'delete_schedules', 'update_schedules'):
+            raw = data.get(key)
+            if isinstance(raw, str):
+                try:
+                    data[key] = json.loads(raw)
+                except json.JSONDecodeError:
+                    raise serializers.ValidationError({key: 'Неверный формат JSON'})
 
         return super().to_internal_value(data)
-    
+
     def update(self, instance, validated_data):
-        new_schedules = validated_data.pop('schedules', [])
+        services = validated_data.pop('services', None)
+
+        new_schedules    = validated_data.pop('schedules', [])
         delete_schedules = validated_data.pop('delete_schedules', [])
         update_schedules = validated_data.pop('update_schedules', [])
 
         if delete_schedules:
             EmployeeSchedule.objects.filter(id__in=delete_schedules, employee=instance).delete()
-        
-        for schedule in new_schedules:
-            EmployeeSchedule.objects.create(employee=instance, **schedule)
-    
-        if update_schedules:
-            for schedule_data in update_schedules:
-                schedule_id = schedule_data.get('id')
-                try:
-                    employee_schedule = EmployeeSchedule.objects.get(id=schedule_id, employee=instance)
-                    for key, value in schedule_data.items():
-                        setattr(employee_schedule, key, value)
-                    employee_schedule.save()
-                except EmployeeSchedule.DoesNotExist:
-                    raise serializers.ValidationError({'update_schedules': f'Расписание с ID {schedule_id} не найдено.'})
-                
-        return super().update(instance, validated_data)
+
+        for sched in new_schedules:
+            EmployeeSchedule.objects.create(employee=instance, **sched)
+
+        for sched in update_schedules:
+            sched_id = sched.get('id')
+            try:
+                es = EmployeeSchedule.objects.get(id=sched_id, employee=instance)
+                for k, v in sched.items():
+                    setattr(es, k, v)
+                es.save()
+            except EmployeeSchedule.DoesNotExist:
+                raise serializers.ValidationError(
+                    {'update_schedules': f'Расписание с ID {sched_id} не найдено.'}
+                )
+
+        instance = super().update(instance, validated_data)
+
+        if services is not None:
+            instance.services.set(services)
+
+        return instance
     
