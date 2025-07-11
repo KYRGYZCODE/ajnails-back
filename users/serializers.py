@@ -19,25 +19,26 @@ class UserSerializer(serializers.ModelSerializer):
         exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser', 'last_login')
 
     def to_internal_value(self, data):
-        # если пришёл multipart/form-data — это QueryDict
         if isinstance(data, QueryDict):
             data = data.copy()
 
             raw = data.get('services')
             if raw is not None:
-                # 1) JSON-строка: "[14,15,16]"
                 if raw.startswith('[') and raw.endswith(']'):
                     try:
                         lst = json.loads(raw)
-                        data.setlist('services', [str(x) for x in lst])
                     except json.JSONDecodeError:
-                        pass
-                # 2) CSV-строка: "14,15,16"
+                        lst = []
                 elif ',' in raw:
-                    data.setlist('services', [x for x in raw.split(',') if x])
-                # 3) повторяющиеся поля: services=14&services=15…
+                    lst = [int(x) for x in raw.split(',') if x]
                 else:
-                    data.setlist('services', data.getlist('services'))
+                    lst = [int(x) for x in data.getlist('services')]
+
+                data.setlist('services', [str(x) for x in lst])
+
+            data = {key: data.getlist(key) if len(data.getlist(key)) > 1
+                    else data.get(key)
+                    for key in data.keys()}
 
         return super().to_internal_value(data)
     
