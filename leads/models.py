@@ -30,10 +30,12 @@ class Service(models.Model):
         'self', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='additional_services'
     )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Услуга"
         verbose_name_plural = "Услуги"
+        ordering = ['-created_at']
 
     def __str__(self):
         return self.name
