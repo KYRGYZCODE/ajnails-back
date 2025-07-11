@@ -26,22 +26,39 @@ class UserSerializer(serializers.ModelSerializer):
         )
 
     def to_internal_value(self, data):
+        # 1) Если multipart/form-data — это QueryDict, превращаем его в plain dict
         if isinstance(data, QueryDict):
             mutable = data.copy()
             plain = {}
             for key in mutable.keys():
                 vals = mutable.getlist(key)
                 if key == 'services':
+                    # собираем из всех parts CSV и повторяющихся полей единый список строк
                     flat = []
                     for v in vals:
                         for part in v.split(','):
                             part = part.strip()
                             if part:
                                 flat.append(part)
-                    plain['services'] = flat
+                    plain[key] = flat
                 else:
                     plain[key] = vals if len(vals) > 1 else vals[0]
             data = plain
+
+        # 2) Если services всё ещё строка — тоже превращаем в список int
+        raw = data.get('services')
+        if isinstance(raw, str):
+            raw = raw.strip()
+            if raw.startswith('[') and raw.endswith(']'):
+                try:
+                    data['services'] = [int(x) for x in json.loads(raw)]
+                except json.JSONDecodeError:
+                    pass
+            elif ',' in raw:
+                data['services'] = [int(x) for x in raw.split(',') if x.strip()]
+        elif isinstance(raw, list):
+            # на всякий случай строковые элементы в ints
+            data['services'] = [int(x) for x in raw]
 
         return super().to_internal_value(data)
 
@@ -58,10 +75,12 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
+        # удаляем аватарку, если прислали avatar=null
         if validated_data.get('avatar') is None and instance.avatar:
             instance.avatar.delete(save=False)
             instance.avatar = None
 
+        # забираем services, чтобы DRF не пытался сам их установить
         services = validated_data.pop('services', None)
         instance = super().update(instance, validated_data)
         if services is not None:
@@ -76,7 +95,6 @@ class UserSerializer(serializers.ModelSerializer):
             rep['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
         return rep
 
-    
 
 
 class UserGet(serializers.ModelSerializer):
