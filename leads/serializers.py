@@ -205,6 +205,8 @@ class LeadSerializer(serializers.ModelSerializer):
         )
 
         asyncio.run(send_order_message(message))
+        if lead.master.telegram_chat_id:
+            asyncio.run(send_order_message(message, [lead.master.telegram_chat_id]))
 
         try:
             from leads.payment import create_payment_for_lead
