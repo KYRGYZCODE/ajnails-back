@@ -67,6 +67,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     surname = models.CharField(max_length=120, null=True, blank=True, verbose_name="Отчество")
     gender = models.CharField(max_length=6, choices=GENDER_CHOICES, null=True, blank=True, verbose_name="Пол")
     about = models.CharField(max_length=300, null=True, blank=True)
+    telegram_chat_id = models.BigIntegerField(null=True, blank=True, verbose_name="Telegram chat ID")
 
     citizenship = models.CharField(max_length=100, null=True, blank=True, verbose_name="Гражданство")
     role = models.CharField(max_length=8, choices=ROLE_CHOICES, default='worker', verbose_name="Роль")
