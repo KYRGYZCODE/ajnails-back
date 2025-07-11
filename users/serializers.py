@@ -9,70 +9,72 @@ from leads.models import Service
 
 class UserSerializer(serializers.ModelSerializer):
     services = serializers.PrimaryKeyRelatedField(
-        many=True, queryset=Service.objects.all(), required=False, write_only=True
+        many=True,
+        queryset=Service.objects.all(),
+        required=False,
+        write_only=True
     )
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        exclude = ('groups', 'user_permissions', 'is_active', 'is_staff', 'is_superuser', 'last_login')
+        exclude = (
+            'groups', 'user_permissions',
+            'is_active', 'is_staff', 'is_superuser',
+            'last_login'
+        )
 
     def to_internal_value(self, data):
         if isinstance(data, QueryDict):
-            data = data.copy()
-
-            raw = data.get('services')
-            if raw is not None:
-                if raw.startswith('[') and raw.endswith(']'):
-                    try:
-                        lst = json.loads(raw)
-                        data.setlist('services', [str(x) for x in lst])
-                    except json.JSONDecodeError:
-                        pass
-                elif ',' in raw:
-                    data.setlist('services', [x for x in raw.split(',') if x])
+            mutable = data.copy()
+            plain = {}
+            for key in mutable.keys():
+                vals = mutable.getlist(key)
+                if key == 'services':
+                    flat = []
+                    for v in vals:
+                        for part in v.split(','):
+                            part = part.strip()
+                            if part:
+                                flat.append(part)
+                    plain['services'] = flat
                 else:
-                    data.setlist('services', data.getlist('services'))
+                    plain[key] = vals if len(vals) > 1 else vals[0]
+            data = plain
 
         return super().to_internal_value(data)
-    
+
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Пользователь с таким email уже существует.")
         return value
-    
+
     def create(self, validated_data):
-        services_data = validated_data.pop('services', None)
-
+        services = validated_data.pop('services', None)
         user = User.objects.create_user(**validated_data)
-
-        if services_data:
-            user.services.set(services_data)
-
+        if services is not None:
+            user.services.set(services)
         return user
-    
-    def to_representation(self, instance):
-        from leads.serializers import ServiceSerializer
-        representation = super().to_representation(instance)
-        representation["services"] = ServiceSerializer(instance.services, many=True).data
-        if instance.schedule.exists():
-            representation['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
-        return representation
 
     def update(self, instance, validated_data):
-        if 'avatar' in validated_data and validated_data['avatar'] is None:
-            if instance.avatar:
-                instance.avatar.delete(save=False)
+        if validated_data.get('avatar') is None and instance.avatar:
+            instance.avatar.delete(save=False)
             instance.avatar = None
 
         services = validated_data.pop('services', None)
         instance = super().update(instance, validated_data)
-
         if services is not None:
             instance.services.set(services)
-
         return instance
+
+    def to_representation(self, instance):
+        from leads.serializers import ServiceSerializer
+        rep = super().to_representation(instance)
+        rep['services'] = ServiceSerializer(instance.services, many=True).data
+        if instance.schedule.exists():
+            rep['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
+        return rep
 
     
 
