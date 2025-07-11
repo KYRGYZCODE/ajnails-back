@@ -20,37 +20,20 @@ class UserSerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         if isinstance(data, QueryDict):
-            mutable = data.copy()
+            data = data.copy()
 
-            raw_list = mutable.getlist('services')
-            flat = []
-
-            for item in raw_list:
-                item = item.strip()
-                if not item:
-                    continue
-                if item.startswith('[') and item.endswith(']'):
+            raw = data.get('services')
+            if raw is not None:
+                if raw.startswith('[') and raw.endswith(']'):
                     try:
-                        loaded = json.loads(item)
-                        flat += [str(x) for x in loaded]
-                        continue
+                        lst = json.loads(raw)
+                        data.setlist('services', [str(x) for x in lst])
                     except json.JSONDecodeError:
                         pass
-                if ',' in item:
-                    flat += [x for x in item.split(',') if x]
+                elif ',' in raw:
+                    data.setlist('services', [x for x in raw.split(',') if x])
                 else:
-                    flat.append(item)
-
-            mutable.setlist('services', flat)
-
-            normal = {}
-            for key in mutable.keys():
-                vals = mutable.getlist(key)
-                if len(vals) > 1:
-                    normal[key] = vals
-                else:
-                    normal[key] = vals[0]
-            data = normal
+                    data.setlist('services', data.getlist('services'))
 
         return super().to_internal_value(data)
     
