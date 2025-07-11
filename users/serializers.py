@@ -7,12 +7,25 @@ from django.http import QueryDict
 from .models import WEEKDAY_RUSSIAN, User, EmployeeSchedule
 from leads.models import Service
 
+class CSVListField(serializers.ListField):
+    """
+    Принимает либо:
+      - форму "48,51,52" (str) -> split(',') -> ['48','51','52']
+      - повторяющиеся поля: ['48','51','52']
+    И дальше валидирует каждый элемент через child.
+    """
+    def to_internal_value(self, data):
+        # если получили строку, разбиваем по запятым
+        if isinstance(data, str):
+            data = [item.strip() for item in data.split(',') if item.strip()]
+        return super().to_internal_value(data)
+
+
 class UserSerializer(serializers.ModelSerializer):
-    services = serializers.PrimaryKeyRelatedField(
-        many=True,
-        queryset=Service.objects.all(),
-        required=False,
-        write_only=True
+    services = CSVListField(
+        child=serializers.PrimaryKeyRelatedField(queryset=Service.objects.all()),
+        write_only=True,
+        required=False
     )
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
@@ -24,43 +37,6 @@ class UserSerializer(serializers.ModelSerializer):
             'is_active', 'is_staff', 'is_superuser',
             'last_login'
         )
-
-    def to_internal_value(self, data):
-        # 1) Если multipart/form-data — это QueryDict, превращаем его в plain dict
-        if isinstance(data, QueryDict):
-            mutable = data.copy()
-            plain = {}
-            for key in mutable.keys():
-                vals = mutable.getlist(key)
-                if key == 'services':
-                    # собираем из всех parts CSV и повторяющихся полей единый список строк
-                    flat = []
-                    for v in vals:
-                        for part in v.split(','):
-                            part = part.strip()
-                            if part:
-                                flat.append(part)
-                    plain[key] = flat
-                else:
-                    plain[key] = vals if len(vals) > 1 else vals[0]
-            data = plain
-
-        # 2) Если services всё ещё строка — тоже превращаем в список int
-        raw = data.get('services')
-        if isinstance(raw, str):
-            raw = raw.strip()
-            if raw.startswith('[') and raw.endswith(']'):
-                try:
-                    data['services'] = [int(x) for x in json.loads(raw)]
-                except json.JSONDecodeError:
-                    pass
-            elif ',' in raw:
-                data['services'] = [int(x) for x in raw.split(',') if x.strip()]
-        elif isinstance(raw, list):
-            # на всякий случай строковые элементы в ints
-            data['services'] = [int(x) for x in raw]
-
-        return super().to_internal_value(data)
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -75,12 +51,11 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
-        # удаляем аватарку, если прислали avatar=null
+        # удаляем старый аватар, если прислали avatar=null
         if validated_data.get('avatar') is None and instance.avatar:
             instance.avatar.delete(save=False)
             instance.avatar = None
 
-        # забираем services, чтобы DRF не пытался сам их установить
         services = validated_data.pop('services', None)
         instance = super().update(instance, validated_data)
         if services is not None:
@@ -94,7 +69,6 @@ class UserSerializer(serializers.ModelSerializer):
         if instance.schedule.exists():
             rep['schedule'] = EmployeeScheduleSerializer(instance.schedule, many=True).data
         return rep
-
 
 
 class UserGet(serializers.ModelSerializer):
