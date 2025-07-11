@@ -66,7 +66,15 @@ class UserSerializer(serializers.ModelSerializer):
                 instance.avatar.delete(save=False)
             instance.avatar = None
 
-        return super().update(instance, validated_data)
+        services = validated_data.pop('services', None)
+        instance = super().update(instance, validated_data)
+
+        if services is not None:
+            instance.services.set(services)
+
+        return instance
+
+    
 
 
 class UserGet(serializers.ModelSerializer):
