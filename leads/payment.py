@@ -35,7 +35,6 @@ def create_payment_for_lead(lead: Lead) -> str:
             'pg_currency': 'KGS',
             'pg_description': f"\u041E\u043F\u043B\u0430\u0442\u0430 \u0437\u0430\u043F\u0438\u0441\u0438 #{lead.pk}",
             'pg_salt': os.urandom(16).hex(),
-            'pg_testing_mode': '1',
             'pg_result_url': settings.FREEDOMPAY_RESULT_URL,
             'pg_success_url': settings.FREEDOMPAY_SUCCESS_URL,
             'pg_failure_url': settings.FREEDOMPAY_FAILURE_URL,
