@@ -18,6 +18,9 @@ class ServiceBaseSerializer(serializers.ModelSerializer):
 
 class ServiceSerializer(serializers.ModelSerializer):
     additional_services = ServiceBaseSerializer(many=True, read_only=True)
+    parent_services = serializers.PrimaryKeyRelatedField(
+        queryset=Service.objects.all(), many=True, required=False
+    )
 
     class Meta:
         model = Service
@@ -25,27 +28,32 @@ class ServiceSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        if instance.parent_service:
-            representation['parent_service'] = ServiceBaseSerializer(instance.parent_service).data
-        else:
-            representation['parent_service'] = None
+        representation['parent_services'] = ServiceBaseSerializer(
+            instance.parent_services.all(), many=True
+        ).data
         return representation
 
     def validate(self, attrs):
         instance = self.instance
-        parent_service = attrs.get("parent_service")
-        if instance and parent_service is None:
-            parent_service = instance.parent_service
+        parents = attrs.get("parent_services")
+        if instance and parents is None:
+            parents = instance.parent_services.all()
 
-        if parent_service and instance:
-            if parent_service == instance:
-                raise serializers.ValidationError({"parent_service": "Услуга не может быть родителем сама себе."})
+        if parents and instance:
+            for parent in parents:
+                if parent == instance:
+                    raise serializers.ValidationError({"parent_services": "Услуга не может быть родителем сама себе."})
 
-            current = parent_service
-            while current:
-                if current == instance:
-                    raise serializers.ValidationError({"parent_service": "Циклическая связь между услугами недопустима."})
-                current = current.parent_service
+                stack = [parent]
+                visited = set()
+                while stack:
+                    current = stack.pop()
+                    if current in visited:
+                        continue
+                    visited.add(current)
+                    if current == instance:
+                        raise serializers.ValidationError({"parent_services": "Циклическая связь между услугами недопустима."})
+                    stack.extend(list(current.parent_services.all()))
 
         return attrs
 
