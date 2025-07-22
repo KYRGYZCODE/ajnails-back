@@ -26,8 +26,8 @@ class Service(models.Model):
     image = models.ImageField(upload_to='services/', null=True, blank=True)
     is_long = models.BooleanField(default=False)
     is_additional = models.BooleanField(default=False, verbose_name="Дополнительная услуга")
-    parent_service = models.ForeignKey(
-        'self', on_delete=models.SET_NULL, null=True, blank=True,
+    parent_service = models.ManyToManyField(
+        'self', symmetrical=False, blank=True,
         related_name='additional_services'
     )
     created_at = models.DateTimeField(auto_now_add=True)
