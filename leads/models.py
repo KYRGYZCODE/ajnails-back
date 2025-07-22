@@ -26,7 +26,7 @@ class Service(models.Model):
     image = models.ImageField(upload_to='services/', null=True, blank=True)
     is_long = models.BooleanField(default=False)
     is_additional = models.BooleanField(default=False, verbose_name="Дополнительная услуга")
-    parent_service = models.ManyToManyField(
+    parent_services = models.ManyToManyField(
         'self', symmetrical=False, blank=True,
         related_name='additional_services'
     )
