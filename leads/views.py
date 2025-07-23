@@ -29,6 +29,18 @@ from django.utils.timezone import make_aware, datetime
 User = get_user_model()
 
 
+from rest_framework.pagination import LimitOffsetPagination
+
+class UnlimitedLimitOffsetPagination(LimitOffsetPagination):
+    default_limit = 10
+    max_limit = None
+
+    def paginate_queryset(self, queryset, request, view=None):
+        if request.query_params.get('limit') == 'all':
+            return None
+        return super().paginate_queryset(queryset, request, view)
+
+
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.all()
     serializer_class = ClientSerializer
@@ -37,6 +49,7 @@ class ClientViewSet(viewsets.ModelViewSet):
 class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.AllowAny]
+    pagination_class = UnlimitedLimitOffsetPagination
 
     filter_backends = (SearchFilter,)
     search_fields = ('name', )
