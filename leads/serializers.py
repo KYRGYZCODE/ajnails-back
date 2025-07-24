@@ -27,6 +27,39 @@ class ServiceSerializer(serializers.ModelSerializer):
         model = Service
         fields = '__all__'
 
+    def to_internal_value(self, data):
+        if isinstance(data, QueryDict):
+            data = data.copy()
+
+            raw = data.get('parent_services')
+            if raw is not None:
+                if raw.startswith('[') and raw.endswith(']'):
+                    try:
+                        lst = json.loads(raw)
+                        data.setlist('parent_services', [str(x) for x in lst])
+                    except json.JSONDecodeError:
+                        pass
+                elif ',' in raw:
+                    data.setlist('parent_services', [x for x in raw.split(',') if x])
+                else:
+                    data.setlist('parent_services', data.getlist('parent_services'))
+
+        return super().to_internal_value(data)
+
+    def create(self, validated_data):
+        parents = validated_data.pop('parent_services', None)
+        service = Service.objects.create(**validated_data)
+        if parents:
+            service.parent_services.set(parents)
+        return service
+
+    def update(self, instance, validated_data):
+        parents = validated_data.pop('parent_services', None)
+        instance = super().update(instance, validated_data)
+        if parents is not None:
+            instance.parent_services.set(parents)
+        return instance
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['parent_services'] = ServiceBaseSerializer(
