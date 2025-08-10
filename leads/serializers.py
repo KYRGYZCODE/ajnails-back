@@ -250,9 +250,10 @@ class LeadSerializer(serializers.ModelSerializer):
             asyncio.run(send_order_message(message, [lead.master.telegram_chat_id]))
 
         try:
-            from leads.payment import create_payment_for_lead
-            create_payment_for_lead(lead)
-            check_payment_status.apply_async(args=[lead.pk], countdown=15)
+            pass
+            # from leads.payment import create_payment_for_lead
+            # create_payment_for_lead(lead)
+            # check_payment_status.apply_async(args=[lead.pk], countdown=15)
         except Exception as e:
             print(f"Failed to create payment for lead {lead.pk}: {e}")
 
